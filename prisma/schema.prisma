@@ -1,0 +1,388 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  /// "owner" can manage users; "member" is a VA-style account.
+  role         String   @default("member")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects      Project[]
+  keywordLists  KeywordList[]
+  searchHistory SearchHistory[]
+  audits        Audit[]
+  googleAccount GoogleAccount?
+  articles      Article[]
+  tracked       TrackedKeyword[]
+  geoIdeas      GeoIdea[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  url         String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// Google properties linked to this project, chosen once from the signed-in
+  /// Google account. Null until the owner picks one.
+  gscSiteUrl      String?
+  gscSiteName     String?
+  ga4PropertyId   String?
+  ga4PropertyName String?
+  gscSyncedAt     DateTime?
+  ga4SyncedAt     DateTime?
+  googleSyncError String?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  audits       Audit[]
+  auditPages   AuditPage[]
+  keywordLists KeywordList[]
+  articles     Article[]
+  gscPages     GscPageMetric[]
+  gscQueries   GscQueryMetric[]
+  tracked      TrackedKeyword[]
+  businessFacts BusinessFacts?
+  geoIdeas      GeoIdea[]
+  ga4Pages     Ga4PageMetric[]
+
+  @@unique([userId, url])
+  @@index([userId])
+}
+
+/// Cached third-party SERP/autocomplete responses.
+/// The free SerpApi tier is 250 searches a month, so every call is cached and
+/// reused until it expires rather than being re-fetched per page view.
+model SerpCache {
+  id        String   @id @default(cuid())
+  /// e.g. "google" | "google_autocomplete"
+  engine    String
+  query     String
+  country   String   @default("us")
+  payload   Json
+  fetchedAt DateTime @default(now())
+
+  @@unique([engine, query, country])
+  @@index([fetchedAt])
+}
+
+model SearchHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  keyword     String
+  country     String   @default("us")
+  resultCount Int      @default(0)
+  searchCount Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, keyword, country])
+  @@index([userId])
+}
+
+model KeywordList {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  name      String
+  country   String   @default("us")
+  /// Embedded keyword entries (same shape as the former Mongoose subdocs).
+  keywords  Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([userId])
+  @@index([projectId])
+}
+
+model Audit {
+  id           String    @id @default(cuid())
+  userId       String
+  projectId    String
+  status       String    @default("running")
+  startUrl     String
+  maxPages     Int       @default(100)
+  pagesCrawled Int       @default(0)
+  pagesFound   Int       @default(0)
+  healthScore  Int       @default(0)
+  /// Record<IssueCode, number>
+  issueCounts  Json      @default("{}")
+  totalIssues  Int       @default(0)
+  error        String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pages   AuditPage[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([projectId, createdAt])
+}
+
+model AuditPage {
+  id                String    @id @default(cuid())
+  auditId           String
+  projectId         String
+  url               String
+  path              String    @default("/")
+  status            Int       @default(0)
+  title             String    @default("")
+  metaDescription   String    @default("")
+  h1                String[]  @default([])
+  wordCount         Int       @default(0)
+  canonical         String    @default("")
+  indexable         Boolean   @default(true)
+  lastModified      DateTime?
+  imagesTotal       Int       @default(0)
+  imagesMissingAlt  Int       @default(0)
+  internalLinkCount Int       @default(0)
+  brokenLinks       String[]  @default([])
+  /// Issue[]
+  issues            Json      @default("[]")
+  /// Denormalized codes from `issues` for efficient filtering (replaces Mongo path query).
+  issueCodes        String[]  @default([])
+  issueScore        Int       @default(0)
+
+  audit   Audit   @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([auditId, url])
+  @@index([auditId])
+  @@index([auditId, issueScore])
+  @@index([projectId])
+}
+
+/// Search Console performance per URL — what Content Intelligence ranks pages on.
+model GscPageMetric {
+  id          String   @id @default(cuid())
+  projectId   String
+  date        DateTime @db.Date
+  page        String
+  clicks      Int      @default(0)
+  impressions Int      @default(0)
+  ctr         Float    @default(0)
+  position    Float    @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, date, page])
+  @@index([projectId, date])
+}
+
+/// Search Console performance per query — powers keyword insights.
+model GscQueryMetric {
+  id          String   @id @default(cuid())
+  projectId   String
+  date        DateTime @db.Date
+  query       String
+  clicks      Int      @default(0)
+  impressions Int      @default(0)
+  ctr         Float    @default(0)
+  position    Float    @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, date, query])
+  @@index([projectId, date])
+}
+
+/// GA4 engagement per landing page.
+model Ga4PageMetric {
+  id             String   @id @default(cuid())
+  projectId      String
+  date           DateTime @db.Date
+  pagePath       String
+  sessions       Int      @default(0)
+  users          Int      @default(0)
+  pageViews      Int      @default(0)
+  engagementRate Float    @default(0)
+  avgEngagementTime Float @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, date, pagePath])
+  @@index([projectId, date])
+}
+
+/// A draft article written in the Content Assistant.
+model Article {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  title     String
+  keyword   String
+  country   String   @default("us")
+  /// preparing | draft | in_progress | published
+  status    String   @default("preparing")
+  /// Markdown body. Empty until the author or the AI writes something.
+  content   String   @default("")
+  /// Cached research so the editor never re-crawls on load. Shape: ArticleBrief.
+  brief     Json?
+  briefError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId, updatedAt])
+}
+
+/// A keyword being rank-tracked for a project, the way KeySearch tracks them.
+model TrackedKeyword {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  keyword   String
+  /// Search engine domain, e.g. "google.com".
+  engine    String   @default("google.com")
+  /// Two-letter country for the SERP, e.g. "us".
+  country   String   @default("us")
+  /// Optional city/region for a localised check.
+  location  String?
+  /// Optional grouping label, matching KeySearch's Groups.
+  groupName String?
+  /// Estimated monthly searches, cached so the table need not re-estimate.
+  volume    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots RankSnapshot[]
+
+  @@unique([projectId, keyword, engine, country])
+  @@index([projectId, updatedAt])
+  @@index([userId])
+}
+
+/// One measured position for a tracked keyword on a given day.
+model RankSnapshot {
+  id        String   @id @default(cuid())
+  keywordId String
+  checkedAt DateTime @default(now())
+  /// 1-100, or null when the domain was not found in the results.
+  rank      Int?
+  /// The ranking URL, when found.
+  url       String?
+  /// "serp" (measured live) | "search-console" (Google's own average).
+  source    String   @default("serp")
+
+  keyword TrackedKeyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@index([keywordId, checkedAt])
+}
+
+/// One Google identity per user, authorised at sign-in with every scope the
+/// app needs. Tokens live here only — projects reference properties, not
+/// credentials, so linking a second project never re-prompts.
+model GoogleAccount {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  email                 String
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  tokenExpiresAt        DateTime?
+  /// Space-separated scopes Google actually granted.
+  scopes                String    @default("")
+  lastError             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Owner-managed configuration that overrides the deployment environment.
+/// Secret values are encrypted with the same key as OAuth tokens.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+/// Grounding facts for GEO Lab drafting. One row per project.
+/// The drafting pipeline may not state a number, policy or claim that is not
+/// traceable to this record — it falls back to qualitative language instead.
+model BusinessFacts {
+  id              String   @id @default(cuid())
+  projectId       String   @unique
+  serviceArea     String   @default("")
+  travelPolicy    String   @default("")
+  eventTypes      String   @default("")
+  guestMin        Int?
+  guestMax        Int?
+  dietaryHandling String   @default("")
+  pricingLogic    String   @default("")
+  leadTime        String   @default("")
+  consultingScope String   @default("")
+  /// 3–5 real past-event details Adam is happy to reference generally.
+  pastEvents      String[] @default([])
+  /// Explicit claims the generator must never make.
+  neverClaim      String[] @default([])
+  /// Anchor pages this project can link to: [{ id, label, url }].
+  anchorPages     Json     @default("[]")
+  updatedAt       DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+/// A candidate supporting article produced by moment mapping.
+model GeoIdea {
+  id           String   @id @default(cuid())
+  userId       String
+  projectId    String
+  seed         String
+  anchorPageId String
+  title        String
+  /// want_to_know | want_to_go | want_to_do | want_to_buy
+  moment       String
+  /// pricing | problems | not_a_fit | comparison | how_to | local_logistics
+  category     String
+  rationale    String
+  attributes   String[] @default([])
+  linkUrl      String   @default("")
+  anchorText   String   @default("")
+  /// Set when the idea is too close to a published post or a sibling idea.
+  redundantWith String?
+  /// idea | drafting | drafted
+  status       String   @default("idea")
+  draftHtml    String   @default("")
+  metaTitle    String   @default("")
+  metaDescription String @default("")
+  slug         String   @default("")
+  /// Questions lifted from real PAA/GSC signal, with answers.
+  faq          Json     @default("[]")
+  qaNotes      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([userId])
+}

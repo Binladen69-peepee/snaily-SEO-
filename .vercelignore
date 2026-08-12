@@ -1,0 +1,14 @@
+# Never upload local secrets — env vars are configured in the Vercel project.
+.env
+.env.local
+.env.*.local
+
+# Build output and local caches
+.next
+.next-build
+node_modules
+*.tsbuildinfo
+
+# Docs are not needed at runtime
+DEVELOPMENT_RULES.md
+PROJECT_STATUS.md

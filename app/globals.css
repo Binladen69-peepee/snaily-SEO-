@@ -1,0 +1,514 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+ * Palette
+ *
+ * Matched to KeySearch: teal-green brand, dark navy top bar, light grey page
+ * behind white cards. The seven difficulty colours below are KeySearch's own
+ * banding (Very Easy → Too Difficult) and are used everywhere a score appears,
+ * so the same number always reads the same colour.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --radius: 0.375rem;
+  --background: oklch(0.99 0.001 250);
+  --foreground: oklch(0.28 0.015 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.28 0.015 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.28 0.015 255);
+  --primary: oklch(0.615 0.187 260);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.968 0.003 250);
+  --secondary-foreground: oklch(0.35 0.015 255);
+  --muted: oklch(0.973 0.002 250);
+  --muted-foreground: oklch(0.56 0.014 255);
+  --accent: oklch(0.965 0.008 260);
+  --accent-foreground: oklch(0.28 0.015 255);
+  --destructive: oklch(0.585 0.207 27);
+  --destructive-foreground: oklch(1 0 0);
+  /* Rank Tracker charts: the donut bands and the history line. */
+  --chart-1: oklch(0.48 0.17 285);
+  --chart-2: oklch(0.6 0.15 285);
+  --chart-3: oklch(0.62 0.17 258);
+  --chart-muted: oklch(0.9 0.008 260);
+  --success: oklch(0.63 0.16 148);
+  --warning: oklch(0.74 0.14 82);
+  --border: oklch(0.925 0.004 250);
+  --input: oklch(0.9 0.005 250);
+  --ring: oklch(0.615 0.187 260);
+
+  /* Top navigation — KeySearch's bar is white with a hairline underneath. */
+  --nav: oklch(1 0 0);
+  --nav-foreground: oklch(0.28 0.015 255);
+  --nav-muted: oklch(0.42 0.015 255);
+  --nav-accent: oklch(0.965 0.006 260);
+
+  /*
+   * Difficulty scale, easiest → hardest.
+   *
+   * Solid fills carrying white text, the way KeySearch prints a score badge.
+   * Kept dark enough that white stays legible on every one.
+   */
+  --kd-1: oklch(0.63 0.155 148); /* Very Easy        */
+  --kd-2: oklch(0.655 0.155 142); /* Easy            */
+  --kd-3: oklch(0.675 0.15 133); /* Still Easy       */
+  --kd-4: oklch(0.7 0.125 98); /* Fairly Difficult   */
+  --kd-5: oklch(0.68 0.155 25); /* Difficult         */
+  --kd-6: oklch(0.62 0.185 26); /* Very Difficult    */
+  --kd-7: oklch(0.555 0.205 27); /* Too Difficult    */
+
+  /*
+   * SERP metric cell tints — how beatable a competitor looks on one metric.
+   * Pale fills behind ordinary dark text, as KeySearch renders them.
+   */
+  --cell-good: oklch(0.945 0.055 148);
+  --cell-mid: oklch(0.955 0.06 95);
+  --cell-bad: oklch(0.938 0.045 22);
+}
+
+.dark {
+  /* Neutral black surfaces — no blue/navy tint on backgrounds. */
+  --background: oklch(0 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.1 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.1 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.68 0.175 260);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.14 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.12 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.16 0 0);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.66 0.19 27);
+  --destructive-foreground: oklch(1 0 0);
+  --chart-1: oklch(0.68 0.16 285);
+  --chart-2: oklch(0.74 0.13 285);
+  --chart-3: oklch(0.7 0.15 258);
+  --chart-muted: oklch(0.2 0 0);
+  --success: oklch(0.7 0.15 148);
+  --warning: oklch(0.8 0.14 82);
+  --border: oklch(0.22 0 0);
+  --input: oklch(0.18 0 0);
+  --ring: oklch(0.68 0.175 260);
+
+  --nav: oklch(0 0 0);
+  --nav-foreground: oklch(0.98 0 0);
+  --nav-muted: oklch(0.65 0 0);
+  --nav-accent: oklch(0.14 0 0);
+
+  --kd-1: oklch(0.68 0.16 148);
+  --kd-2: oklch(0.7 0.16 142);
+  --kd-3: oklch(0.72 0.155 133);
+  --kd-4: oklch(0.745 0.13 98);
+  --kd-5: oklch(0.7 0.16 25);
+  --kd-6: oklch(0.65 0.19 26);
+  --kd-7: oklch(0.6 0.205 27);
+
+  --cell-good: oklch(0.33 0.06 148);
+  --cell-mid: oklch(0.34 0.06 95);
+  --cell-bad: oklch(0.33 0.07 22);
+}
+
+@theme inline {
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-muted: var(--chart-muted);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-nav: var(--nav);
+  --color-nav-foreground: var(--nav-foreground);
+  --color-nav-muted: var(--nav-muted);
+  --color-nav-accent: var(--nav-accent);
+  --color-kd-1: var(--kd-1);
+  --color-kd-2: var(--kd-2);
+  --color-kd-3: var(--kd-3);
+  --color-kd-4: var(--kd-4);
+  --color-kd-5: var(--kd-5);
+  --color-kd-6: var(--kd-6);
+  --color-kd-7: var(--kd-7);
+  --color-cell-good: var(--cell-good);
+  --color-cell-mid: var(--cell-mid);
+  --color-cell-bad: var(--cell-bad);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-poppins), Poppins, "Segoe UI", system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11";
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Tailwind preflight underlines abbr[title] with a dotted line. Never show that. */
+  abbr[title] {
+    text-decoration: none;
+  }
+
+  /* Prefer tangible focus on interactive elements over mouse outlines */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Landing page animations.
+ *
+ * All motion is opt-in via a class, and the global prefers-reduced-motion rule
+ * above collapses every one of these to ~0s — so the page stays fully usable
+ * for anyone who asks the OS for less movement.
+ * ------------------------------------------------------------------------ */
+
+@keyframes cs-fade-up {
+  from { opacity: 0; transform: translate3d(0, 1.5rem, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes cs-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes cs-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33%      { transform: translate3d(3%, -4%, 0) scale(1.06); }
+  66%      { transform: translate3d(-3%, 3%, 0) scale(0.97); }
+}
+
+@keyframes cs-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-0.5rem); }
+}
+
+@keyframes cs-grow {
+  from { transform: scaleY(0.05); }
+  to   { transform: scaleY(1); }
+}
+
+@keyframes cs-scan {
+  0%       { transform: translateY(-100%); opacity: 0; }
+  15%, 85% { opacity: 1; }
+  100%     { transform: translateY(2100%); opacity: 0; }
+}
+
+@keyframes cs-sheen {
+  from { transform: translateX(-120%); }
+  to   { transform: translateX(220%); }
+}
+
+/* Entrance: applied immediately (hero) or by the Reveal observer on scroll. */
+.cs-in {
+  animation: cs-fade-up 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Before the observer fires, keep revealed content hidden but laid out. */
+.cs-pending {
+  opacity: 0;
+}
+
+.cs-drift {
+  animation: cs-drift 22s ease-in-out infinite;
+}
+
+.cs-float {
+  animation: cs-float 5s ease-in-out infinite;
+}
+
+.cs-grow {
+  transform-origin: bottom;
+  animation: cs-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cs-scan {
+  animation: cs-scan 4.5s ease-in-out infinite;
+}
+
+/* Light sweep across a card on hover. */
+.cs-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklch, var(--primary) 12%, transparent) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.cs-sheen:hover::after {
+  animation: cs-sheen 0.9s ease-out;
+}
+
+/* Gradient text that stays legible in both themes. */
+.cs-gradient-text {
+  background: linear-gradient(
+    100deg,
+    var(--foreground) 10%,
+    var(--primary) 55%,
+    var(--foreground) 95%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * TipTap article editor
+ * ------------------------------------------------------------------------ */
+
+.prose-editor {
+  min-height: 24rem;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+
+.prose-editor:focus {
+  outline: none;
+}
+
+.prose-editor p {
+  margin: 0 0 0.9em;
+}
+
+.prose-editor h2 {
+  margin: 1.4em 0 0.5em;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.prose-editor h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.prose-editor h4 {
+  margin: 1em 0 0.35em;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.prose-editor ul,
+.prose-editor ol {
+  margin: 0 0 0.9em;
+  padding-left: 1.4em;
+}
+
+.prose-editor li {
+  margin: 0.2em 0;
+}
+
+.prose-editor li p {
+  margin: 0;
+}
+
+.prose-editor blockquote {
+  margin: 0 0 0.9em;
+  padding: 0.15em 0 0.15em 1em;
+  border-left: 3px solid var(--primary);
+  color: var(--muted-foreground);
+}
+
+.prose-editor a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-editor img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.75em 0;
+}
+
+.prose-editor code {
+  border-radius: 0.25rem;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+.prose-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.eq-bar {
+  display: inline-block;
+  /*
+   * Scaling from the centre, not the bottom. Anchored at the bottom only the
+   * top edge moved, so the bars looked like they grew upwards and snapped
+   * back; from the centre both ends travel and it reads as an equaliser.
+   */
+  transform-origin: center center;
+  transform: scaleY(0.3);
+  animation: eq-bounce 0.85s ease-in-out infinite;
+  will-change: transform;
+}
+
+/*
+ * Print / "Save as PDF".
+ *
+ * The app chrome is dropped and colours are forced so a keyword report prints
+ * as a clean document. Anything not wanted on paper carries `print:hidden`.
+ */
+@media print {
+  aside,
+  header,
+  nav,
+  [role="alert"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Keep table borders visible — browsers drop backgrounds by default. */
+  table,
+  th,
+  td {
+    border-color: #ccc !important;
+  }
+
+  /* Don't split a card or table row across two pages. */
+  table,
+  tr {
+    break-inside: avoid;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Chart entrances.
+ *
+ * The line draws itself by animating a dash offset, and the area fades in
+ * behind it. `pathLength` is normalised to 1 in the markup-free case by using
+ * a dash array large enough for any path this app draws.
+ * ------------------------------------------------------------------------ */
+
+@keyframes chart-draw {
+  from { stroke-dashoffset: 4000; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes chart-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.chart-line {
+  stroke-dasharray: 4000;
+  animation: chart-draw 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chart-area {
+  animation: chart-fade 0.9s ease-out 0.2s both;
+}
+
+/* Donut and ring segments ease into place instead of snapping. */
+.ring-segment {
+  transition:
+    stroke-dasharray 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    stroke-dashoffset 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Poppins weighting.
+ *
+ * Poppins sits visually lighter than the previous face, so body copy runs at
+ * 450-ish (500) and headings at 600/700 to keep the hierarchy that the old
+ * font gave for free.
+ * ------------------------------------------------------------------------ */
+
+body {
+  font-weight: 500;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-weight: 700;
+}
+
+/* Numeric cells stay legible at small sizes without going bold. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
