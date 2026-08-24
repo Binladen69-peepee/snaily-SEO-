@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getGoogleAccountPublic } from "@/lib/google/account";
 import { getProjects } from "@/lib/projects";
+import { getSetupSnapshot } from "@/lib/setup/state";
 
 export const metadata = { title: "Project settings · Snaily SEO" };
 
@@ -23,7 +24,7 @@ export default async function ProjectSettingsPage({
   if (!project || !session) notFound();
 
   // Property links live on the project; tokens never leave the server.
-  const [links, account] = await Promise.all([
+  const [links, account, snapshot] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
       select: {
@@ -34,11 +35,12 @@ export default async function ProjectSettingsPage({
       },
     }),
     getGoogleAccountPublic(session.userId),
+    getSetupSnapshot(id),
   ]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <ProjectSettings project={project} />
+      <ProjectSettings project={project} snapshot={snapshot} />
       <GoogleProperties
         projectId={id}
         googleEmail={account?.email ?? null}

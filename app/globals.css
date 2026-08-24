@@ -161,14 +161,22 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-poppins), Poppins, "Segoe UI", system-ui, sans-serif;
+  /* Navigation chrome. See the note beside the font import in app/layout.tsx. */
+  --font-nav: var(--font-rubik), Rubik, "Segoe UI", system-ui, sans-serif;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    overflow-x: clip;
     font-feature-settings: "cv11";
   }
   .tabular {
@@ -178,6 +186,137 @@
   /* Tailwind preflight underlines abbr[title] with a dotted line. Never show that. */
   abbr[title] {
     text-decoration: none;
+  }
+
+  /* Contained horizontal scroll — tabs, tables — without widening the page */
+  .scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  /* App content padding — safe-area aware, never overflows 100vw */
+  /*
+   * One horizontal gutter for the whole shell.
+   *
+   * The bar and the page used to set their own: `px-2 sm:px-4` on the nav
+   * against 0.75/1/1.5rem on the content, so the logo sat closer to the window
+   * edge than the cards underneath it at every breakpoint and the left edge
+   * read as ragged. The nav also ignored the safe-area insets the content
+   * respected, which on a notched phone in landscape put the wordmark under
+   * the cutout.
+   *
+   * Both now use this, so they cannot drift apart again.
+   */
+  .app-gutter {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .app-gutter {
+      padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .app-gutter {
+      padding-left: max(2rem, env(safe-area-inset-left, 0px));
+      padding-right: max(2rem, env(safe-area-inset-right, 0px));
+    }
+  }
+
+  /*
+   * Cancels the gutter, for the two screens that are deliberately full-bleed.
+   *
+   * Paired with `.app-gutter` on purpose. Those screens used `-m-3 sm:-m-4
+   * md:-m-6` to undo a padding scale written out separately, so widening the
+   * gutter left a stripe of dead space down both sides of Keyword Research and
+   * the Competitor Explorer. Cancelling by reference instead of by
+   * coincidence means the next change to the gutter cannot reopen it.
+   */
+  .app-bleed {
+    margin-left: calc(-1 * max(1rem, env(safe-area-inset-left, 0px)));
+    margin-right: calc(-1 * max(1rem, env(safe-area-inset-right, 0px)));
+  }
+
+  @media (min-width: 640px) {
+    .app-bleed {
+      margin-left: calc(-1 * max(1.5rem, env(safe-area-inset-left, 0px)));
+      margin-right: calc(-1 * max(1.5rem, env(safe-area-inset-right, 0px)));
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .app-bleed {
+      margin-left: calc(-1 * max(2rem, env(safe-area-inset-left, 0px)));
+      margin-right: calc(-1 * max(2rem, env(safe-area-inset-right, 0px)));
+    }
+  }
+
+  .app-main {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .app-main {
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .app-main {
+      padding-top: 1.5rem;
+      padding-bottom: 1.5rem;
+    }
+  }
+
+  /*
+   * Navigation type.
+   *
+   * Rubik runs a little wide at UI sizes, so a hair of negative tracking pulls
+   * the labels together without touching their apertures. `cv11` is a Poppins
+   * feature and does nothing here, so the nav resets it rather than inheriting
+   * a setting meant for another face.
+   */
+  .nav-type {
+    font-family: var(--font-nav);
+    letter-spacing: -0.006em;
+    font-feature-settings: normal;
+  }
+
+  body.has-setup-fab .app-main {
+    padding-bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 640px) {
+    body.has-setup-fab .app-main {
+      padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+
+  /* Media and pre never blow out the viewport */
+  img,
+  video,
+  canvas,
+  svg,
+  iframe {
+    max-width: 100%;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  /* Tables must shrink or scroll inside a parent — never widen the page */
+  table {
+    max-width: 100%;
   }
 
   /* Prefer tangible focus on interactive elements over mouse outlines */
@@ -305,75 +444,157 @@
  * TipTap article editor
  * ------------------------------------------------------------------------ */
 
-.prose-editor {
+.prose-editor,
+.cs-post {
   min-height: 24rem;
-  font-size: 1rem;
+  max-width: 42rem;
+  margin-inline: auto;
+  font-family: "Droid Serif", Georgia, "Times New Roman", serif;
+  font-size: 16px;
   line-height: 1.75;
-  color: var(--foreground);
+  color: #1c1917;
+}
+
+.prose-editor.cs-canvas {
+  min-height: 16rem;
+  max-width: none;
+  margin-inline: 0;
+  padding-inline: 0;
 }
 
 .prose-editor:focus {
   outline: none;
 }
 
-.prose-editor p {
-  margin: 0 0 0.9em;
+.prose-editor p,
+.cs-post p {
+  margin: 0 0 1.15em;
 }
 
-.prose-editor h2 {
-  margin: 1.4em 0 0.5em;
-  font-size: 1.35rem;
-  font-weight: 650;
+.prose-editor h2,
+.cs-post h2 {
+  margin: 1.75em 0 0.55em;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-size: 1.65rem;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  line-height: 1.3;
+  line-height: 1.25;
+  color: #1a1a1a;
+  text-transform: none;
 }
 
-.prose-editor h3 {
-  margin: 1.2em 0 0.4em;
-  font-size: 1.15rem;
-  font-weight: 600;
+.prose-editor h3,
+.cs-post h3 {
+  margin: 1.4em 0 0.4em;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 1.35;
+  line-height: 1.3;
+  color: #1a1a1a;
 }
 
-.prose-editor h4 {
-  margin: 1em 0 0.35em;
+.prose-editor h4,
+.cs-post h4 {
+  margin: 1.15em 0 0.35em;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   font-size: 1.05rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .prose-editor ul,
-.prose-editor ol {
-  margin: 0 0 0.9em;
-  padding-left: 1.4em;
+.prose-editor ol,
+.cs-post ul,
+.cs-post ol {
+  margin: 0 0 1.15em;
+  padding-left: 1.5em;
 }
 
-.prose-editor li {
-  margin: 0.2em 0;
+.prose-editor li,
+.cs-post li {
+  margin: 0.25em 0;
 }
 
-.prose-editor li p {
+.prose-editor li p,
+.cs-post li p {
   margin: 0;
 }
 
-.prose-editor blockquote {
-  margin: 0 0 0.9em;
-  padding: 0.15em 0 0.15em 1em;
-  border-left: 3px solid var(--primary);
-  color: var(--muted-foreground);
+.prose-editor blockquote,
+.cs-post blockquote {
+  margin: 0 0 1.15em;
+  padding: 0.35em 0 0.35em 1.1em;
+  border-left: 3px solid #8b4513;
+  color: #44403c;
 }
 
-.prose-editor a {
-  color: var(--primary);
+.prose-editor a,
+.cs-post a {
+  color: #8b4513;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.prose-editor img {
+.prose-editor img,
+.cs-post img {
   max-width: 100%;
   height: auto;
-  border-radius: 0.5rem;
-  margin: 0.75em 0;
+  margin: 0;
+}
+
+.cs-image {
+  margin: 1.5em 0;
+  max-width: 100%;
+}
+
+.cs-image-center {
+  text-align: center;
+}
+
+.cs-image-left {
+  text-align: left;
+}
+
+.cs-image-right {
+  text-align: right;
+}
+
+.cs-image-selected img {
+  outline: 2px solid color-mix(in oklch, var(--primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.cs-caption,
+.cs-post figcaption {
+  margin-top: 0.4em;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: #57534e;
+  text-align: center;
+}
+
+.prose-editor hr,
+.cs-post hr {
+  margin: 2em auto;
+  width: 40%;
+  border: 0;
+  border-top: 1px solid #d6d3d1;
+}
+
+.prose-editor table,
+.cs-post table {
+  width: 100%;
+  margin: 0 0 1.15em;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.prose-editor th,
+.prose-editor td,
+.cs-post th,
+.cs-post td {
+  border: 1px solid #e7e5e4;
+  padding: 0.4em 0.6em;
 }
 
 .prose-editor code {
@@ -383,12 +604,28 @@
   font-size: 0.9em;
 }
 
+.prose-editor .comment-mark {
+  background: color-mix(in oklch, var(--warning) 28%, transparent);
+  border-bottom: 2px dotted color-mix(in oklch, var(--warning) 70%, var(--foreground));
+  cursor: help;
+}
+
 .prose-editor p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   height: 0;
   pointer-events: none;
   color: var(--muted-foreground);
+}
+
+.cs-preview {
+  background: #fff;
+  color: #1c1917;
+}
+
+.cs-preview .cs-post {
+  min-height: 0;
+  padding: 0.5rem 0 2rem;
 }
 
 @keyframes eq-bounce {
@@ -511,4 +748,104 @@ h1 {
 .tabular {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+}
+
+/* ---------------------------------------------------------------------------
+   Editor: find-and-replace highlights, outline jump flash, tables, task lists
+   --------------------------------------------------------------------------- */
+
+/* Painted as ProseMirror decorations, so these never enter the document. */
+.find-match {
+  background-color: color-mix(in oklab, var(--color-warning) 45%, transparent);
+  border-radius: 2px;
+}
+
+.find-match-active {
+  background-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+/* Brief confirmation of which heading the outline jumped to. */
+.outline-jump {
+  animation: outline-jump 1.2s ease-out;
+}
+
+@keyframes outline-jump {
+  0%,
+  40% {
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.prose-editor table {
+  width: 100%;
+  margin: 1.25em 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.prose-editor th,
+.prose-editor td {
+  position: relative;
+  min-width: 4em;
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.prose-editor th {
+  background-color: color-mix(in oklab, var(--color-muted) 60%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* The cell(s) a table command would act on. */
+.prose-editor .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  pointer-events: none;
+}
+
+.prose-editor .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  width: 4px;
+  background-color: var(--color-primary);
+  cursor: col-resize;
+}
+
+.prose-editor ul[data-type="taskList"] {
+  padding-left: 0;
+  list-style: none;
+}
+
+.prose-editor ul[data-type="taskList"] li {
+  display: flex;
+  gap: 0.5em;
+  align-items: flex-start;
+}
+
+.prose-editor ul[data-type="taskList"] li > label {
+  margin-top: 0.25em;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.prose-editor ul[data-type="taskList"] li > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.prose-editor mark {
+  padding: 0.05em 0.15em;
+  border-radius: 2px;
+  background-color: color-mix(in oklab, var(--color-warning) 50%, transparent);
 }

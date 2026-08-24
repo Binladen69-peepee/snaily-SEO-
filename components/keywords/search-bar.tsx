@@ -49,10 +49,10 @@ export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2.5">
+    <div className="flex flex-col gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center">
       <form
         onSubmit={onSubmit}
-        className="flex min-w-0 flex-1 flex-wrap items-center rounded border border-border bg-background"
+        className="flex min-w-0 w-full flex-1 flex-wrap items-center rounded border border-border bg-background sm:w-auto"
       >
         <div className="flex w-full min-w-0 items-center sm:w-auto sm:flex-1">
           <span className="shrink-0 pl-2.5 pr-1.5 text-muted-foreground">
@@ -113,7 +113,9 @@ export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) 
         </button>
       </form>
 
-      <ToolbarActions activeFilterCount={activeFilterCount} />
+      <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+        <ToolbarActions activeFilterCount={activeFilterCount} />
+      </div>
     </div>
   );
 }

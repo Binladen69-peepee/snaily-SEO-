@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Loader2, Trash2, UserPlus } from "lucide-react";
+import { KeyRound, Loader2, LogIn, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -104,6 +104,40 @@ export function UsersView({
       return;
     }
     void patch(user, { password });
+  }
+
+  /**
+   * Sign in as another account.
+   *
+   * Confirmed because it swaps the whole session — every screen after this
+   * belongs to them, and it is recorded against the owner who started it.
+   */
+  async function signInAs(u: UserDTO) {
+    if (
+      !window.confirm(
+        `Sign in as ${u.name} (${u.email})?
+
+You will see their projects and data. A banner stays on screen until you switch back, and the session is logged.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(u.id);
+    try {
+      const res = await fetch(`/api/users/${u.id}/impersonate`, { method: "POST" });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not sign in as that user");
+        setBusyId(null);
+        return;
+      }
+      // Hard reload: every server component on screen was rendered for the
+      // previous identity.
+      window.location.assign("/dashboard");
+    } catch {
+      toast.error("Could not reach the server");
+      setBusyId(null);
+    }
   }
 
   async function remove(user: UserDTO) {
@@ -213,6 +247,18 @@ export function UsersView({
                   >
                     <KeyRound className="size-3.5" />
                   </button>
+                  {u.id !== currentUserId && (
+                    <button
+                      type="button"
+                      disabled={busyId === u.id}
+                      aria-label={`Sign in as ${u.email}`}
+                      title="Sign in as this user"
+                      onClick={() => void signInAs(u)}
+                      className="ml-1 rounded p-1 text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <LogIn className="size-3.5" />
+                    </button>
+                  )}
                   {u.id !== currentUserId && (
                     <button
                       type="button"

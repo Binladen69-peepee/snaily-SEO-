@@ -204,7 +204,7 @@ export function KeywordTable({
                 <ScorePill score={k.difficulty} />
               ) : (
                 <Link
-                  href={`/keywords/difficulty?q=${encodeURIComponent(k.keyword)}&country=${country}`}
+                  href={`/difficulty?q=${encodeURIComponent(k.keyword)}&country=${country}`}
                   aria-label={`Check difficulty for ${k.keyword}`}
                   className="inline-flex text-muted-foreground hover:text-primary"
                 >

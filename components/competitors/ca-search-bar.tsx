@@ -1,35 +1,53 @@
 "use client";
 
 import { Folder } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, useTransition } from "react";
 
 import { EqualizerInline } from "@/components/ui/equalizer-loader";
+import { cn } from "@/lib/utils";
 
 /**
- * Shared Competitive Analysis search bar (Explorer style).
- * Submits into whichever CA tool is currently open so layout stays identical.
+ * Where a domain search lands.
+ *
+ * Each Competitive Analysis tool is its own top-level page, so the page passes
+ * its own route in rather than the bar guessing from the pathname.
  */
-export function CASearchBar({
-  domain: domainProp,
-  country: countryProp,
+export type SearchTarget =
+  | "/competitors"
+  | "/backlinks"
+  | "/organic-keywords"
+  | "/url-metrics";
+
+function destination(
+  target: SearchTarget,
+  query: string,
+  country: string,
+): string {
+  if (target === "/url-metrics") {
+    const url = /^https?:\/\//i.test(query) ? query : `https://${query}`;
+    return `/url-metrics?url=${encodeURIComponent(url)}`;
+  }
+  const params = new URLSearchParams({ domain: query, country });
+  return `${target}?${params.toString()}`;
+}
+
+function Bar({
+  target,
+  variant,
 }: {
-  /** Omit to read the current domain straight from the URL. */
-  domain?: string;
-  country?: string;
-} = {}) {
+  target: SearchTarget;
+  variant: "bar" | "card";
+}) {
   const router = useRouter();
-  const pathname = usePathname();
   const params = useSearchParams();
 
   /*
-   * Reading the URL here rather than taking props lets this live in the
-   * Competitive Analysis layout, which is what keeps it mounted while the
-   * panel below swaps between tabs.
+   * Seeded from the URL so a shared link opens with the domain already in the
+   * box, and so following a link from another tool keeps the domain visible.
    */
   const urlDomain =
     params.get("domain") ??
-    params.get("them") ??
     (() => {
       const raw = params.get("url");
       if (raw === null) return null;
@@ -41,65 +59,42 @@ export function CASearchBar({
     })() ??
     "";
 
-  const domain = domainProp ?? urlDomain;
-  const country = countryProp ?? params.get("country") ?? "us";
+  const country = params.get("country") ?? "us";
   const [pending, startTransition] = useTransition();
-  const [value, setValue] = useState(domain);
-  const [scope, setScope] = useState<"domain" | "page">("domain");
+  const [value, setValue] = useState(urlDomain);
+  const [scope, setScope] = useState<"domain" | "page">(
+    target === "/url-metrics" ? "page" : "domain",
+  );
 
   useEffect(() => {
-    setValue(domain);
-  }, [domain]);
+    setValue(urlDomain);
+  }, [urlDomain]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const q = value.trim();
     if (q === "") return;
 
+    // "Single Page" is the one cross-tool jump left: it always means URL
+    // Metrics, whichever tool you happened to be looking at.
+    const where = scope === "page" ? "/url-metrics" : target;
+
     startTransition(() => {
-      if (scope === "page") {
-        const url = /^https?:\/\//i.test(q) ? q : `https://${q}`;
-        router.push(
-          `/competitors/url-metrics?url=${encodeURIComponent(url)}`,
-        );
-        return;
-      }
-
-      const params = new URLSearchParams({ domain: q, country });
-
-      if (pathname.startsWith("/competitors/backlinks")) {
-        router.push(`/competitors/backlinks?${params.toString()}`);
-        return;
-      }
-      if (pathname.startsWith("/competitors/organic")) {
-        router.push(`/competitors/organic?${params.toString()}`);
-        return;
-      }
-      if (pathname.startsWith("/competitors/gap")) {
-        router.push(
-          `/competitors/gap?them=${encodeURIComponent(q)}&country=${country}`,
-        );
-        return;
-      }
-      if (pathname.startsWith("/competitors/url-metrics")) {
-        router.push(
-          `/competitors/url-metrics?url=${encodeURIComponent(`https://${q}`)}`,
-        );
-        return;
-      }
-      if (pathname.startsWith("/audit")) {
-        router.push(`/competitors?${params.toString()}`);
-        return;
-      }
-
-      router.push(`/competitors?${params.toString()}`);
+      router.push(destination(where, q, country));
     });
   }
 
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-2 border-b border-border bg-card px-3 py-3 sm:flex-row sm:items-center sm:px-4"
+      className={cn(
+        "flex flex-col gap-2 bg-card sm:flex-row sm:items-center",
+        // "bar" runs edge to edge under the nav, the way the reference does;
+        // "card" is the boxed form the other tools use inside their padding.
+        variant === "bar"
+          ? "border-b border-border px-3 py-2.5 sm:px-4"
+          : "rounded-xl border border-border p-3 shadow-sm sm:p-4",
+      )}
     >
       <div className="relative min-w-0 flex-1">
         <Folder
@@ -113,7 +108,7 @@ export function CASearchBar({
           }}
           placeholder="Enter a domain, e.g. competitor.com"
           aria-label="Domain"
-          className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="h-11 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
       </div>
 
@@ -123,7 +118,7 @@ export function CASearchBar({
           setScope(e.target.value as "domain" | "page");
         }}
         aria-label="Scope"
-        className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="h-11 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <option value="domain">Entire Domain</option>
         <option value="page">Single Page</option>
@@ -132,11 +127,43 @@ export function CASearchBar({
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-80"
+        className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-80"
       >
         {pending ? <EqualizerInline /> : null}
         Search
       </button>
     </form>
+  );
+}
+
+/**
+ * Domain search bar shared by the Competitive Analysis tools.
+ *
+ * It reads the query string, so it carries its own Suspense boundary — without
+ * one, every page that renders it would opt out of static prerendering.
+ */
+export function CASearchBar({
+  target,
+  variant = "card",
+}: {
+  target: SearchTarget;
+  variant?: "bar" | "card";
+}) {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className={cn(
+            "bg-card",
+            variant === "bar"
+              ? "h-15 border-b border-border"
+              : "h-19 rounded-xl border border-border shadow-sm sm:h-21",
+          )}
+          aria-hidden
+        />
+      }
+    >
+      <Bar target={target} variant={variant} />
+    </Suspense>
   );
 }

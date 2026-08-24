@@ -56,7 +56,38 @@ export type ArticleRow = {
   status: ArticleStatus;
   updatedAt: string;
   words: number;
+  mode: ArticleMode;
+  phase: ArticlePhase | "";
 };
+
+export const ARTICLE_MODES = ["optimize", "drafter"] as const;
+export type ArticleMode = (typeof ARTICLE_MODES)[number];
+
+export const ARTICLE_PHASES = ["outline", "draft", "proofed"] as const;
+export type ArticlePhase = (typeof ARTICLE_PHASES)[number];
+
+export type DraftComment = {
+  id: string;
+  quote: string;
+  note: string;
+};
+
+export function parseComments(value: unknown): DraftComment[] {
+  if (!Array.isArray(value)) return [];
+  const out: DraftComment[] = [];
+  for (const row of value) {
+    if (row === null || typeof row !== "object") continue;
+    const c = row as Partial<DraftComment>;
+    if (
+      typeof c.id === "string" &&
+      typeof c.quote === "string" &&
+      typeof c.note === "string"
+    ) {
+      out.push({ id: c.id, quote: c.quote, note: c.note });
+    }
+  }
+  return out;
+}
 
 /**
  * Readable text from an article body.

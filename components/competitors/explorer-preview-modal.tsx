@@ -22,10 +22,10 @@ type PreviewProps = {
   domain: string;
   keywords?: OrganicKeyword[];
   competitors?: CompetitorRow[];
-  backlinks?: number;
-  dofollow?: number;
-  nofollow?: number;
-  referringDomains?: number;
+  backlinks?: number | null;
+  /** No free source reports rel attributes, so this is never populated. */
+
+  referringDomains?: number | null;
   citingPages?: number;
 };
 
@@ -48,8 +48,8 @@ export function ExplorerPreviewModal({
   keywords = [],
   competitors = [],
   backlinks = 0,
-  dofollow = 0,
-  nofollow = 0,
+
+
   referringDomains = 0,
   citingPages = 0,
 }: PreviewProps) {
@@ -81,10 +81,10 @@ export function ExplorerPreviewModal({
 
   const fullHref =
     kind === "keywords"
-      ? `/competitors/organic?domain=${encodeURIComponent(domain)}`
+      ? `/organic-keywords?domain=${encodeURIComponent(domain)}`
       : kind === "pages"
-        ? `/competitors/url-metrics?url=${encodeURIComponent(`https://${domain}`)}`
-        : `/competitors/backlinks?domain=${encodeURIComponent(domain)}`;
+        ? `/url-metrics?url=${encodeURIComponent(`https://${domain}`)}`
+        : `/backlinks?domain=${encodeURIComponent(domain)}`;
 
   const fullLabel =
     kind === "keywords"
@@ -149,13 +149,13 @@ export function ExplorerPreviewModal({
               <tr key={c.site} className="border-b border-border/70">
                 <td className="px-4 py-2.5 font-medium text-primary">{c.site}</td>
                 <td className="tabular px-2 py-2.5 text-right">
-                  {c.ds.toFixed(1)}
+                  {c.ds === null ? "—" : c.ds.toFixed(1)}
                 </td>
                 <td className="tabular px-2 py-2.5 text-right">
-                  {formatNumber(c.links)}
+                  {c.links === null ? "—" : `~${formatNumber(c.links)}`}
                 </td>
                 <td className="tabular px-4 py-2.5 text-right">
-                  {formatNumber(c.domains)}
+                  {c.domains === null ? "—" : `~${formatNumber(c.domains)}`}
                 </td>
               </tr>
             ))}
@@ -181,12 +181,15 @@ export function ExplorerPreviewModal({
     // backlinks
     body = (
       <div className="grid grid-cols-2 gap-3 px-4 py-5 sm:grid-cols-3">
-        <Stat label="Backlinks" value={formatNumber(backlinks)} />
-        <Stat label="Dofollow" value={formatNumber(dofollow)} />
-        <Stat label="Nofollow" value={formatNumber(nofollow)} />
+        <Stat
+          label="Backlinks"
+          value={backlinks === null ? "N/A" : `~${formatNumber(backlinks)}`}
+        />
         <Stat
           label="Referring domains"
-          value={formatNumber(referringDomains)}
+          value={
+            referringDomains === null ? "N/A" : `~${formatNumber(referringDomains)}`
+          }
         />
         <Stat label="Citing pages (live)" value={formatNumber(citingPages)} />
       </div>

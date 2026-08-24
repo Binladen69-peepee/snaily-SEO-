@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Loader2,
   Newspaper,
+  PenLine,
   Plus,
   Search,
   Trash2,
@@ -20,11 +21,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { STATUS_LABEL, type ArticleRow, type ArticleStatus } from "@/lib/articles";
 import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 
 const PAGE_SIZES = [10, 25, 50];
 
@@ -66,11 +69,17 @@ export function ArticlesView({
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<"draft" | "optimize" | null>(null);
+  const [step, setStep] = useState<1 | 2>(1);
   const [title, setTitle] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [recipe, setRecipe] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
   const preparing = articles.some((a) => a.status === "preparing");
   const kicked = useRef(new Set<string>());
@@ -132,19 +141,27 @@ export function ArticlesView({
   const current = Math.min(page, pageCount);
   const visible = filtered.slice((current - 1) * perPage, current * perPage);
 
-  async function create() {
+  async function create(mode: "optimize" | "drafter") {
     if (projectId === null) {
       toast.error("Create a project before writing articles");
       return;
     }
-    if (title.trim() === "" || keyword.trim() === "") return;
+    if (keyword.trim() === "") return;
+    if (mode === "optimize" && title.trim() === "") return;
+    if (mode === "drafter" && recipe.trim() === "") return;
 
     setCreating(true);
     try {
       const res = await fetch("/api/articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title, keyword }),
+        body: JSON.stringify({
+          projectId,
+          title: title.trim() || keyword.trim(),
+          keyword,
+          mode,
+          recipe: mode === "drafter" ? recipe : undefined,
+        }),
       });
       const data = (await res.json()) as { id?: string; error?: string };
 
@@ -153,9 +170,11 @@ export function ArticlesView({
         return;
       }
 
-      setOpen(false);
+      setOpen(null);
       setTitle("");
       setKeyword("");
+      setRecipe("");
+      setStep(1);
       router.push(`/content-assistant/${data.id}`);
     } catch {
       toast.error("Could not reach the server");
@@ -164,9 +183,7 @@ export function ArticlesView({
     }
   }
 
-  async function remove(id: string, name: string) {
-    if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
-
+  async function remove(id: string) {
     setDeleting(id);
     try {
       const res = await fetch(`/api/articles/${id}`, { method: "DELETE" });
@@ -175,6 +192,7 @@ export function ArticlesView({
         return;
       }
       setArticles((prev) => prev.filter((a) => a.id !== id));
+      setPendingDelete(null);
       toast.success("Article deleted");
     } catch {
       toast.error("Could not reach the server");
@@ -188,7 +206,7 @@ export function ArticlesView({
       {/* ---------- Header ---------- */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Articles</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Drafter</h1>
           <span className="tabular rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
             {filtered.length} total
           </span>
@@ -213,13 +231,25 @@ export function ArticlesView({
           </div>
 
           <Button
+            variant="outline"
             onClick={() => {
-              setOpen(true);
+              setStep(1);
+              setOpen("optimize");
             }}
             className="h-10 shrink-0"
           >
             <Plus />
-            New Article
+            Optimize a draft
+          </Button>
+          <Button
+            onClick={() => {
+              setStep(1);
+              setOpen("draft");
+            }}
+            className="h-10 shrink-0"
+          >
+            <PenLine />
+            Draft
           </Button>
         </div>
       </div>
@@ -264,7 +294,7 @@ export function ArticlesView({
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {query.trim() === ""
-                        ? "Get started by creating your first article"
+                        ? "Draft a post from a recipe, or paste a draft to optimise"
                         : "Nothing matches that search"}
                     </p>
                   </td>
@@ -282,6 +312,12 @@ export function ArticlesView({
                       <span className="block truncate font-semibold" title={a.title}>
                         {a.title}
                       </span>
+                      {a.mode === "drafter" && (
+                        <span className="mt-0.5 inline-block text-[11px] text-muted-foreground">
+                          Drafter
+                          {a.phase === "" ? "" : ` · ${a.phase}`}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-block max-w-[14rem] truncate rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -302,14 +338,16 @@ export function ArticlesView({
                       <button
                         type="button"
                         aria-label={`Delete ${a.title}`}
+                        title="Delete article"
                         disabled={deleting === a.id}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void remove(a.id, a.title);
+                          setPendingDelete({ id: a.id, title: a.title });
                         }}
-                        className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-md bg-destructive px-2 py-1.5 text-xs font-medium text-destructive-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
                       >
                         <Trash2 className="size-4" />
+                        <span className="hidden sm:inline text-xs">Delete</span>
                       </button>
                     </td>
                   </tr>
@@ -370,70 +408,212 @@ export function ArticlesView({
       </div>
 
       {/* ---------- Create dialog ---------- */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog
+        open={open !== null}
+        onOpenChange={(v) => {
+          if (!v) {
+            setOpen(null);
+            setStep(1);
+          }
+        }}
+      >
+        <DialogContent className={open === "draft" && step === 2 ? "max-w-lg" : "max-w-md"}>
           <DialogHeader>
-            <DialogTitle>Create New Article</DialogTitle>
+            <DialogTitle>
+              {open === "draft"
+                ? step === 1
+                  ? "Draft a post"
+                  : "Paste the recipe"
+                : "Optimize a draft"}
+            </DialogTitle>
           </DialogHeader>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void create();
-            }}
-            className="space-y-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="article-title">Title</Label>
-              <Input
-                id="article-title"
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                }}
-                placeholder="Enter title"
-                maxLength={200}
-                autoFocus
-              />
-            </div>
+          {open === "draft" && step === 1 && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (keyword.trim() === "") return;
+                setStep(2);
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="draft-keyword">Target keyword</Label>
+                <Input
+                  id="draft-keyword"
+                  value={keyword}
+                  onChange={(e) => {
+                    setKeyword(e.target.value);
+                  }}
+                  placeholder="e.g. vegan pho recipe"
+                  maxLength={200}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Drafter researches this keyword, then writes the whole post in
+                  your voice from the recipe on the next step.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpen(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={keyword.trim() === ""}>
+                  Next
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="article-keyword">Keyword</Label>
-              <Input
-                id="article-keyword"
-                value={keyword}
-                onChange={(e) => {
-                  setKeyword(e.target.value);
-                }}
-                placeholder="Enter keyword"
-                maxLength={200}
-              />
-              <p className="text-xs text-muted-foreground">
-                We research this keyword in the background and build the
-                editor&apos;s targets from the pages already ranking for it.
-              </p>
-            </div>
+          {open === "draft" && step === 2 && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void create("drafter");
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="draft-recipe">Recipe</Label>
+                <Textarea
+                  id="draft-recipe"
+                  value={recipe}
+                  onChange={(e) => {
+                    setRecipe(e.target.value);
+                  }}
+                  placeholder="Ingredients list and instructions only"
+                  rows={14}
+                  maxLength={50_000}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ingredients and instructions only. Drafter writes the hook,
+                  intro, why-you&apos;ll-adore, steps, serving ideas, tips and
+                  FAQ around this, then links and proofreads it. It runs in the
+                  background - you can close the tab.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setStep(1);
+                  }}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={creating || recipe.trim() === ""}
+                >
+                  {creating ? "Starting…" : "Draft article"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setOpen(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  creating || title.trim() === "" || keyword.trim() === ""
-                }
-              >
-                {creating ? "Creating…" : "Create"}
-              </Button>
-            </DialogFooter>
-          </form>
+          {open === "optimize" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void create("optimize");
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="article-title">Title</Label>
+                <Input
+                  id="article-title"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                  }}
+                  placeholder="Enter title"
+                  maxLength={200}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="article-keyword">Keyword</Label>
+                <Input
+                  id="article-keyword"
+                  value={keyword}
+                  onChange={(e) => {
+                    setKeyword(e.target.value);
+                  }}
+                  placeholder="Enter keyword"
+                  maxLength={200}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paste your draft in the editor. Suggested keywords stay on
+                  the right so you can add them as you go.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpen(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    creating || title.trim() === "" || keyword.trim() === ""
+                  }
+                >
+                  {creating ? "Creating…" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(v) => {
+          if (!v && deleting === null) setPendingDelete(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this article?</DialogTitle>
+            <DialogDescription>
+              “{pendingDelete?.title ?? "Untitled"}” will be removed from
+              Drafter. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deleting !== null}
+              onClick={() => {
+                setPendingDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting !== null || pendingDelete === null}
+              onClick={() => {
+                if (pendingDelete) void remove(pendingDelete.id);
+              }}
+            >
+              {deleting !== null ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

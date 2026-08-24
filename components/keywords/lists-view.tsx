@@ -70,7 +70,7 @@ export function ListsView({ lists }: { lists: ListDetail[] }) {
         icon={List}
         title="No saved lists yet"
         description="Select keywords in Bulk Analysis and save them into a list."
-        action={{ href: "/keywords/bulk", label: "Go to Bulk Analysis" }}
+        action={{ href: "/bulk-check", label: "Go to Bulk Check" }}
       />
     );
   }

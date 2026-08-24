@@ -142,6 +142,7 @@ export function AuthForm({
           native behaviour, and the default is GET — which would put the
           password in the URL, the history entry and the access log.
         */}
+        
         <form onSubmit={onSubmit} method="post" className="space-y-4" noValidate>
           {isRegister && (
             <div className="space-y-2">
@@ -212,3 +213,5 @@ export function AuthForm({
     </Card>
   );
 }
+
+

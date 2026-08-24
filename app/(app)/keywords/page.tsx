@@ -47,10 +47,10 @@ export default async function KeywordsPage({ searchParams }: Props) {
     /*
      * Full-bleed: the search strip spans the window like KeySearch's, and the
      * two panels scroll independently beneath it. The negative margin cancels
-     * the padding the app shell puts on <main>, and 55px is the nav bar's 54px
+     * the padding the app shell puts on <main>, and 57px is the nav bar's 56px
      * plus its 1px bottom border.
      */
-    <div className="-m-4 flex flex-col sm:-m-6 xl:h-[calc(100svh-55px)] xl:overflow-hidden">
+    <div className="app-bleed -my-3 flex flex-col sm:-my-4 md:-my-6 xl:h-[calc(100svh-57px)] xl:overflow-hidden">
       <KeywordToolbar>
         <SearchBar activeFilterCount={activeFilterCount} />
 

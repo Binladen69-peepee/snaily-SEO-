@@ -2,6 +2,7 @@ import { KeyRound } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { IntegrationsConnections } from "@/components/integrations-connections";
+import { IntegrationsConnector } from "@/components/integrations-connector";
 import { IntegrationsView } from "@/components/integrations-view";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -41,19 +42,19 @@ export default async function IntegrationsPage() {
 
   return (
     /*
-      A fixed-height screen rather than a scrolling document: the header,
-      connections summary and stat tiles stay put and only the integration
-      list scrolls, so the window itself never does.
+      A normal scrolling page. Pinning it to the viewport meant the list had a
+      fixed ~500px to show eight rows of dense data, which is what made the
+      screen feel cramped — the content now sets its own height.
     */
-    <div className="mx-auto flex min-h-0 max-w-7xl flex-col gap-3 lg:h-[calc(100svh-6.5rem)] lg:overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
+    <div className="mx-auto max-w-7xl space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
-          <p className="text-xs text-muted-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Manage API keys and service connections for this deployment.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground">
           <KeyRound className="size-3.5" aria-hidden />
           Owner only
         </span>
@@ -75,6 +76,10 @@ export default async function IntegrationsPage() {
           gscSyncedAt: p.gscSyncedAt?.toISOString() ?? null,
           ga4SyncedAt: p.ga4SyncedAt?.toISOString() ?? null,
         }))}
+      />
+
+      <IntegrationsConnector
+        projects={projects.map((p) => ({ id: p.id, name: p.name, url: p.url }))}
       />
 
       <IntegrationsView initial={settings} />

@@ -364,6 +364,15 @@ function buildSerp(keyword: string, country: string): SerpResult[] {
       backlinks: randInt(`${seed}|b${String(i)}`, 40, 240_000),
       keywordInUrl,
       wordCount: randInt(`${seed}|w${String(i)}`, 700, 4800),
+      // The mock provider exists so the app is demonstrable without a key; its
+      // numbers are openly synthetic and the UI badges the whole provider as
+      // mock. These fields keep the shape identical to the live provider.
+      publishedDate: null,
+      sitelinks: randInt(`${seed}|sl${String(i)}`, 0, 6),
+      rating: null,
+      reviews: null,
+      sourceName: domain,
+      displayedLink: `https://${domain}`,
     };
   });
 }

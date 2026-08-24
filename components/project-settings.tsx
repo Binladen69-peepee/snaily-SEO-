@@ -7,6 +7,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ProjectDialog } from "@/components/project-dialog";
+import { WordpressSettingsCard } from "@/components/setup/wordpress-settings-card";
+import { WordpressTemplateCard } from "@/components/setup/wp-template-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,8 +28,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ProjectDTO } from "@/lib/projects";
+import type { SetupSnapshot } from "@/lib/setup/state";
 
-export function ProjectSettings({ project }: { project: ProjectDTO }) {
+export function ProjectSettings({
+  project,
+  snapshot,
+}: {
+  project: ProjectDTO;
+  snapshot: SetupSnapshot | null;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -99,6 +108,13 @@ export function ProjectSettings({ project }: { project: ProjectDTO }) {
           </Button>
         </CardContent>
       </Card>
+
+      <WordpressSettingsCard projectId={project.id} snapshot={snapshot} />
+
+      <WordpressTemplateCard
+        projectId={project.id}
+        connected={snapshot?.wordpress.health === "connected"}
+      />
 
       <Card className="border-destructive/40">
         <CardHeader>

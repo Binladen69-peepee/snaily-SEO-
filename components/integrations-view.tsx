@@ -13,7 +13,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { IntegrationRow, type RowModel } from "@/components/integrations/integration-row";
+import {
+  IntegrationCard,
+  type RowModel,
+} from "@/components/integrations/integration-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SERVICES } from "@/lib/integrations-catalog";
@@ -29,7 +32,7 @@ const COPY: Record<string, { description: string; category: string }> = {
     category: "SEO data provider",
   },
   GROK_API_KEY: {
-    description: "AI writing for the Content Assistant and GEO Lab.",
+    description: "AI writing for Drafter and GEO Lab.",
     category: "AI service",
   },
   GROK_MODEL: {
@@ -74,26 +77,30 @@ function StatTile({
   tone: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
-      <div className="min-w-0">
-        <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className="mt-0.5 truncate text-lg font-semibold leading-tight">{value}</p>
-        <p className="truncate text-[10px] text-muted-foreground">{hint}</p>
-      </div>
-      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", tone)}>
-        <Icon className="size-4" aria-hidden />
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3.5">
+      <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", tone)}>
+        <Icon className="size-4.5" aria-hidden />
       </span>
+      <div className="min-w-0">
+        <p className="tabular text-2xl font-semibold leading-none">{value}</p>
+        <p className="mt-1.5 truncate text-xs font-medium">{label}</p>
+        <p className="truncate text-[11px] text-muted-foreground">{hint}</p>
+      </div>
     </div>
   );
 }
 
+
 /**
- * Owner-facing integrations, as a single non-scrolling screen.
+ * Owner-facing integrations, as a grid of service cards.
  *
- * The page is a fixed-height column: stats, tabs and the footer stay put and
- * only the list scrolls, so the window never does. Every figure comes from a
- * live provider call — where a provider publishes nothing, the row says so
- * rather than showing a number that looks measured.
+ * A card shows only identity and health; the key, its provenance and the impact
+ * list open in a dialog. The page scrolls normally — an earlier version pinned
+ * it to the viewport with an inner scrollbar, which left every row fighting for
+ * about 500px.
+ *
+ * Every figure comes from a live provider call. Where a provider publishes
+ * nothing, the card says so rather than showing a number that looks measured.
  */
 export function IntegrationsView({ initial }: { initial: SettingView[] }) {
   const [settings, setSettings] = useState(initial);
@@ -259,10 +266,16 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
   ];
 
   return (
-    // Fixed-height column: only the list scrolls, so the window never does.
-    <div className="flex min-h-0 flex-col gap-3 lg:flex-1">
+    /*
+      A normal scrolling document.
+
+      This used to be pinned to the viewport with its own inner scrollbar, which
+      meant eight dense rows had to fit in roughly 500px — the direct cause of
+      the cramping. The page scrolls now and the rows get the height they need.
+    */
+    <div className="space-y-4">
       {/* ---------------- stats ---------------- */}
-      <div className="grid shrink-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatTile
           label="Integrations"
           value={String(counts.all)}
@@ -305,7 +318,7 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
       </div>
 
       {/* ---------------- tabs, search, re-check ---------------- */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="Filter integrations">
           {TABS.map((t) => (
             <button
@@ -351,7 +364,7 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
 
       {/* ---------------- affected ---------------- */}
       {affected.length > 0 && (
-        <div className="shrink-0 rounded-xl border border-warning/40 bg-warning/5 px-3 py-2">
+        <div className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-3">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-warning">
             <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
             {affected.length} {affected.length === 1 ? "feature" : "features"} affected right now
@@ -362,25 +375,34 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
         </div>
       )}
 
-      {/* ---------------- the list ---------------- */}
-      <div className="min-h-0 space-y-2 lg:flex-1 lg:overflow-y-auto lg:pr-1" aria-label="Integrations">
+      {/* ---------------- the grid ---------------- */}
+      <section aria-label="Integrations">
         {checks === null ? (
-          Array.from({ length: 5 }, (_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl border border-border bg-card" />
-          ))
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div
+                key={i}
+                className="h-52 animate-pulse rounded-xl border border-border bg-card"
+              />
+            ))}
+          </div>
         ) : visible.length === 0 ? (
-          <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border px-4 py-14 text-center text-sm text-muted-foreground">
             Nothing matches that filter.
           </p>
         ) : (
-          visible.map((r) => <IntegrationRow key={r.id} row={r} busy={busy} onSave={save} />)
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visible.map((r) => (
+              <IntegrationCard key={r.id} row={r} busy={busy} onSave={save} />
+            ))}
+          </div>
         )}
-      </div>
+      </section>
 
       {/* ---------------- footer ---------------- */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-muted/40 px-4 py-3">
         <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden />
-        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted-foreground">
           <span className="font-medium text-foreground">Keys are encrypted at rest.</span>{" "}
           A full key is fetched only when you press the eye, so it never appears in
           the page source or in a screenshot. Statuses come from a live call to each

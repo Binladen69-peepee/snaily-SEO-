@@ -1,7 +1,12 @@
 import { crawlSite } from "@/lib/audit/crawler";
 import { prisma } from "@/lib/db";
 import { estimateTraffic } from "@/lib/keywords/ctr";
-import { estimateKeyword, estimateSerpMetrics, randInt } from "@/lib/keywords/estimate";
+import { estimateKeyword } from "@/lib/keywords/estimate";
+import { getDomainAuthority } from "@/lib/metrics/authority";
+import { readCitations } from "@/lib/metrics/citations";
+import { getCachedLinkCounts, getLinkProfile } from "@/lib/metrics/link-data";
+import { scoreLinkCounts } from "@/lib/metrics/link-counts";
+import { scorePage } from "@/lib/metrics/page-authority";
 import { serpFetch } from "@/lib/keywords/providers/serpapi";
 import { readPage, type PageContent } from "@/lib/optimizer";
 import { extractTerms, type TermCount } from "@/lib/text";
@@ -56,11 +61,15 @@ export type DomainProfile = {
   missingTitles: number;
   missingMeta: number;
   thinPages: number;
-  /** Estimated, badged as such in the UI. */
+  /**
+   * Snaily Domain Authority, derived from free link-graph and SERP signals.
+   * Link counts come from the same Common Crawl graph (see link-counts.ts).
+   */
   authority: {
-    domainAuthority: number;
-    domainLinkingDomains: number;
-    backlinks: number;
+    domainAuthority: number | null;
+    trust: number | null;
+    domainLinkingDomains: number | null;
+    backlinks: number | null;
   };
 };
 
@@ -69,11 +78,11 @@ export type UrlMetrics = {
   /** Round-trip time of the fetch, in milliseconds. */
   responseMs: number;
   https: boolean;
-  /** Estimated, badged as such in the UI. */
-  pageAuthority: number;
-  domainAuthority: number;
-  pageLinkingDomains: number;
-  backlinks: number;
+  /** Snaily scores and link counts from Common Crawl PageRank. */
+  pageAuthority: number | null;
+  domainAuthority: number | null;
+  pageLinkingDomains: number | null;
+  backlinks: number | null;
 };
 
 export type Mention = {
@@ -86,14 +95,17 @@ export type Mention = {
 export type MentionReport = {
   domain: string;
   mentions: Mention[];
-  /** Distinct domains among the mentions. */
+  /** Distinct domains among the citing pages found. Real, but citations only. */
   referringDomains: number;
-  /** Estimated, badged as such in the UI. */
-  estimated: {
-    domainAuthority: number;
-    domainLinkingDomains: number;
-    backlinks: number;
+  /** Snaily Domain Authority for the queried domain. Derived, never guessed. */
+  authority: {
+    domainAuthority: number | null;
+    trust: number | null;
   };
+  /** Domain-level inbound links from Common Crawl PageRank. */
+  backlinks: number | null;
+  /** Distinct linking domains from the same graph. */
+  domainLinkingDomains: number | null;
   /** True when SERPAPI_KEY is absent, so only estimates are shown. */
   liveUnavailable: boolean;
 };
@@ -107,11 +119,23 @@ export type MentionReport = {
  * and the UI says so.
  */
 export async function findMentions(domain: string): Promise<MentionReport> {
-  const est = estimateSerpMetrics(domain, 1);
-  const estimated = {
-    domainAuthority: est.domainAuthority,
-    domainLinkingDomains: est.domainLinkingDomains,
-    backlinks: est.backlinks,
+  const scored = (await getDomainAuthority([domain])).get(
+    domain.replace(/^www\./, "").toLowerCase(),
+  );
+  const authority = {
+    domainAuthority: scored?.score.value ?? null,
+    trust: scored?.trust.value ?? null,
+  };
+  const links = scoreLinkCounts({
+    openPageRank: scored?.openPageRank ?? null,
+    domainAuthority: scored?.score.value ?? null,
+    url: `https://${domain}/`,
+    pageAuthority: scored?.score.value ?? null,
+    position: 1,
+  });
+  const graph = {
+    backlinks: links?.domainBacklinks ?? null,
+    domainLinkingDomains: links?.domainLinkingDomains ?? null,
   };
 
   const apiKey = (process.env.SERPAPI_KEY ?? "").trim();
@@ -120,7 +144,8 @@ export async function findMentions(domain: string): Promise<MentionReport> {
       domain,
       mentions: [],
       referringDomains: 0,
-      estimated,
+      authority,
+      ...graph,
       liveUnavailable: true,
     };
   }
@@ -156,7 +181,8 @@ export async function findMentions(domain: string): Promise<MentionReport> {
     domain,
     mentions,
     referringDomains: new Set(mentions.map((m) => m.domain)).size,
-    estimated,
+    authority,
+    ...graph,
     liveUnavailable: false,
   };
 }
@@ -165,7 +191,9 @@ export async function findMentions(domain: string): Promise<MentionReport> {
 export function normalizeDomain(input: string): string {
   const trimmed = input.trim();
   if (trimmed === "") return "";
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const withScheme = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
   try {
     return new URL(withScheme).hostname.replace(/^www\./, "").toLowerCase();
   } catch {
@@ -241,14 +269,29 @@ export async function profileDomain(
   );
 
   const phrases = [
-    ...extractTerms(targeting, 3, 10),
-    ...extractTerms(targeting, 2, 20),
+    ...extractTerms(targeting, 3, 40),
+    ...extractTerms(targeting, 2, 80),
   ]
     .sort((a, b) => b.documents - a.documents || b.count - a.count)
-    .slice(0, 25);
+    /*
+     * 25 was far too tight. A site's keyword set is the whole reason this
+     * screen exists, and capping it there reported 20 phrases for a blog with
+     * hundreds of posts — a limit of the sample, presented as a property of
+     * the site.
+     */
+    .slice(0, 200);
 
   const words = list.map((p) => p.words).filter((w) => w > 0);
-  const est = estimateSerpMetrics(domain, 1);
+  const scored = (await getDomainAuthority([domain])).get(
+    domain.replace(/^www\./, "").toLowerCase(),
+  );
+  const links = scoreLinkCounts({
+    openPageRank: scored?.openPageRank ?? null,
+    domainAuthority: scored?.score.value ?? null,
+    url: origin,
+    pageAuthority: scored?.score.value ?? null,
+    position: 1,
+  });
 
   return {
     domain,
@@ -266,9 +309,10 @@ export async function profileDomain(
     missingMeta: list.filter((p) => p.metaDescription.trim() === "").length,
     thinPages: list.filter((p) => p.words > 0 && p.words < 300).length,
     authority: {
-      domainAuthority: est.domainAuthority,
-      domainLinkingDomains: est.domainLinkingDomains,
-      backlinks: est.backlinks,
+      domainAuthority: scored?.score.value ?? null,
+      trust: scored?.trust.value ?? null,
+      domainLinkingDomains: links?.domainLinkingDomains ?? null,
+      backlinks: links?.domainBacklinks ?? null,
     },
   };
 }
@@ -279,16 +323,26 @@ export async function getUrlMetrics(url: string): Promise<UrlMetrics> {
   const page = await readPage(url);
   const responseMs = Date.now() - started;
 
-  const est = estimateSerpMetrics(page.domain, 1);
+  const scored = (await getDomainAuthority([page.domain])).get(
+    page.domain.replace(/^www\./, "").toLowerCase(),
+  );
+  const pageScore = scorePage({ url: page.url, domain: scored });
+  const links = scoreLinkCounts({
+    openPageRank: scored?.openPageRank ?? null,
+    domainAuthority: scored?.score.value ?? null,
+    url: page.url,
+    pageAuthority: pageScore.value,
+    position: null,
+  });
 
   return {
     page,
     responseMs,
     https: page.url.startsWith("https://"),
-    pageAuthority: est.pageAuthority,
-    domainAuthority: est.domainAuthority,
-    pageLinkingDomains: est.pageLinkingDomains,
-    backlinks: est.backlinks,
+    pageAuthority: pageScore.value,
+    domainAuthority: scored?.score.value ?? null,
+    pageLinkingDomains: links?.pageLinkingDomains ?? null,
+    backlinks: links?.backlinks ?? null,
   };
 }
 
@@ -337,7 +391,9 @@ async function positionsFromSerpCache(
   for (const row of rows) {
     // Subdomains count, and the best slot wins when a domain holds several.
     const position = positionIn(
-      row.payload as { organic_results?: { position?: number; link?: string }[] },
+      row.payload as {
+        organic_results?: { position?: number; link?: string }[];
+      },
       domain,
     );
     if (position !== null) found.set(row.query, position);
@@ -470,6 +526,41 @@ export async function lookupPositions(
   return out;
 }
 
+/**
+ * Phrases the site's own published titles target, read from synced posts.
+ *
+ * Real content the author wrote, not a guess — and it covers the whole site
+ * rather than the handful of pages a bounded crawl reaches.
+ */
+async function keywordsFromSyncedPosts(
+  domain: string,
+  country: string,
+): Promise<Keyword[]> {
+  try {
+    const posts = await prisma.wpPost.findMany({
+      where: { project: { url: { contains: domain } }, status: "publish" },
+      select: { title: true, seoTitle: true, focusKeyword: true },
+      take: 1_000,
+    });
+    if (posts.length === 0) return [];
+
+    const corpus = posts.map((p) =>
+      [p.title, p.seoTitle, p.focusKeyword].filter((v) => v !== "").join(" . "),
+    );
+
+    const phrases = [
+      ...extractTerms(corpus, 3, 40),
+      ...extractTerms(corpus, 2, 80),
+    ]
+      .sort((a, b) => b.documents - a.documents || b.count - a.count)
+      .slice(0, 200);
+
+    return phrases.map((t) => estimateKeyword(t.term, country));
+  } catch {
+    return [];
+  }
+}
+
 export async function getOrganicKeywords(
   domain: string,
   country: string,
@@ -488,10 +579,23 @@ export async function getOrganicKeywords(
 
   const profile = await profileDomain(domain, country);
 
+  /*
+   * Fold in the site's synced posts.
+   *
+   * The crawl reads at most 24 pages, so for a blog with hundreds of them the
+   * keyword set is a sample of the navigation rather than of the content. When
+   * the site has been synced from WordPress every title is already in the
+   * database, which is a far better corpus and costs nothing to read.
+   */
+  const synced = await keywordsFromSyncedPosts(domain, country);
+  const merged = new Map(profile.keywords.map((k) => [k.keyword, k]));
+  for (const k of synced) if (!merged.has(k.keyword)) merged.set(k.keyword, k);
+  const allKeywords = [...merged.values()];
+
   // Free, real positions for anything already researched in this app.
   const cached = await positionsFromSerpCache(
     domain,
-    profile.keywords.map((k) => k.keyword),
+    allKeywords.map((k) => k.keyword),
     country,
   );
 
@@ -499,7 +603,7 @@ export async function getOrganicKeywords(
     domain,
     source: "crawl",
     profile,
-    keywords: profile.keywords.map((k) => {
+    keywords: allKeywords.map((k) => {
       const position = cached.get(k.keyword.toLowerCase()) ?? null;
       return {
         keyword: k.keyword,
@@ -540,9 +644,7 @@ export type GapResult = {
 };
 
 function describe(k: OrganicKeyword): string {
-  return k.position === null
-    ? "targeted"
-    : `position ${k.position.toFixed(1)}`;
+  return k.position === null ? "targeted" : `position ${k.position.toFixed(1)}`;
 }
 
 export async function compareDomains(
@@ -560,8 +662,12 @@ export async function compareDomains(
     getOrganicKeywords(theirDomain, country, projectId, projectDomain, false),
   ]);
 
-  const yourMap = new Map(you.keywords.map((k) => [k.keyword.toLowerCase(), k]));
-  const theirMap = new Map(them.keywords.map((k) => [k.keyword.toLowerCase(), k]));
+  const yourMap = new Map(
+    you.keywords.map((k) => [k.keyword.toLowerCase(), k]),
+  );
+  const theirMap = new Map(
+    them.keywords.map((k) => [k.keyword.toLowerCase(), k]),
+  );
 
   const gaps: GapRow[] = [];
   const shared: GapRow[] = [];
@@ -608,32 +714,92 @@ export async function compareDomains(
 
 export type CompetitorRow = {
   site: string;
-  /** Domain strength 0–10. */
-  ds: number;
-  links: number;
-  domains: number;
+  /** Snaily domain strength 0–10. Null when no signal could be read. */
+  ds: number | null;
+  /** Domain-level inbound links, derived from Common Crawl PageRank. */
+  links: number | null;
+  /** Referring domains from Common Crawl PageRank (or a cached graph lookup). */
+  domains: number | null;
+  /** Real: analysed keywords this domain was seen ranking for. */
   keywords: number;
 };
 
 export type ExplorerReport = {
   domain: string;
   /** Domain strength 0–10 (estimated from authority). */
-  domainStrength: number;
+  /** Snaily domain strength 0-10. Null when no signal could be read. */
+  domainStrength: number | null;
   /** Average keyword difficulty of organic set. */
   competitionScore: number;
   competitionLabel: string;
   /** Tip target shown beside the score. */
   targetCompetition: number;
   organicCount: number;
+  /**
+   * Modelled monthly visits across every organic keyword, from position × the
+   * CTR curve. Estimated, and labelled as such wherever it is shown.
+   */
+  estimatedTraffic: number;
   organicPreview: OrganicKeyword[];
   competitors: CompetitorRow[];
-  backlinks: number;
-  dofollow: number;
-  nofollow: number;
-  referringDomains: number;
-  dofollowPct: number;
-  /** 12-month estimated backlink trend, oldest first. */
+  /** Domain-level inbound links from Common Crawl PageRank. */
+  backlinks: number | null;
+  /**
+   * Position in the OpenPageRank webgraph — a real global rank across the
+   * crawled web. Null when the domain is not in the graph. Replaces a figure
+   * that was previously computed as `11 - domainStrength`, which was not a
+   * rank by any definition.
+   */
+  globalRank: number | null;
+  /** Distinct domains citing this one, from live SERP results. Real. */
+  citingDomains: number;
+  /**
+   * Pages read by the crawler, ordered by internal inbound links.
+   *
+   * The only page list available for a domain we cannot see Search Console
+   * for. Carries no traffic figure, because nothing free measures traffic on
+   * someone else's site.
+   */
+  crawledPages: {
+    url: string;
+    path: string;
+    title: string;
+    inboundLinks: number;
+    words: number;
+  }[];
+  /**
+   * Referring domains: cached Common Crawl graph lookup when present,
+   * otherwise inverted from OpenPageRank.
+   */
+  referringDomains: number | null;
+  /** Which Common Crawl release the figure came from. */
+  linkDataRelease: string | null;
+  /** Strongest linking domains, for the referring-domains table. */
+  topLinkingDomains: {
+    domain: string;
+    hosts: number;
+    authority: number | null;
+  }[];
+  /**
+   * Anchor text measured by reading the citing pages themselves.
+   *
+   * Real words from real pages, not a model — but only across the citing pages
+   * Google returned, so it is a sample of the link profile rather than all of
+   * it. The UI says so.
+   */
+  topAnchors: { text: string; count: number }[];
+  /** How many citing pages were fetched to produce the two above. */
+  citationsRead: number;
+  /**
+   * Backlink history, one point per day this domain has been analysed.
+   *
+   * Recorded from the first lookup onward rather than back-filled — no free
+   * source publishes a backlink time series, so the curve is built the way a
+   * provider builds one: by writing down today's reading and waiting.
+   */
   trend: number[];
+  /** Dates matching the trend, so the axis is real rather than assumed. */
+  trendDates: string[];
   referringPreview: CompetitorRow[];
   rankingDistribution: { band: string; count: number }[];
   /** Whether organic rows came from GSC or crawl. */
@@ -649,7 +815,9 @@ function competitionLabel(score: number): string {
   return "Competition difficult";
 }
 
-function dsFromAuthority(da: number): number {
+/** Snaily DA (0-100) shown on KeySearch's 0-10 "domain strength" scale. */
+function dsFromAuthority(da: number | null): number | null {
+  if (da === null) return null;
   return Math.round((Math.min(100, Math.max(0, da)) / 10) * 10) / 10;
 }
 
@@ -680,8 +848,8 @@ async function competitorsFromSerpCache(
 
   for (const row of rows) {
     const organic =
-      (row.payload as { organic_results?: { link?: string }[] }).organic_results ??
-      [];
+      (row.payload as { organic_results?: { link?: string }[] })
+        .organic_results ?? [];
     for (const r of organic) {
       let host = "";
       try {
@@ -704,19 +872,34 @@ async function competitorsFromSerpCache(
     }
   }
 
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([site, keywordsHit], i) => {
-      const est = estimateSerpMetrics(site, Math.min(10, i + 1));
-      return {
-        site,
-        ds: dsFromAuthority(est.domainAuthority),
-        links: est.backlinks,
-        domains: est.domainLinkingDomains,
-        keywords: keywordsHit * 37 + est.pageLinkingDomains,
-      };
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
+
+  const sites = top.map(([site]) => site);
+  const [authority, linkCounts] = await Promise.all([
+    getDomainAuthority(sites),
+    // Cache-only: filling this table must never spend the monthly budget.
+    getCachedLinkCounts(sites),
+  ]);
+
+  return top.map(([site, keywordsHit]) => {
+    const scored = authority.get(site);
+    const links = scoreLinkCounts({
+      openPageRank: scored?.openPageRank ?? null,
+      domainAuthority: scored?.score.value ?? null,
+      measuredReferringDomains:
+        authority.get(site)?.referringDomains ?? linkCounts.get(site) ?? null,
+      url: `https://${site}/`,
+      pageAuthority: scored?.score.value ?? null,
+      position: 1,
     });
+    return {
+      site,
+      ds: dsFromAuthority(scored?.score.value ?? null),
+      links: links?.domainBacklinks ?? null,
+      domains: links?.domainLinkingDomains ?? null,
+      keywords: keywordsHit,
+    };
+  });
 }
 
 /**
@@ -744,13 +927,56 @@ export async function buildExplorerReport(
           keywords.reduce((s, k) => s + k.difficulty, 0) / keywords.length,
         );
 
-  const auth = mentions.estimated;
+  const auth = mentions.authority;
   const domainStrength = dsFromAuthority(auth.domainAuthority);
 
-  const backlinks = Math.max(auth.backlinks, mentions.mentions.length);
-  const dofollowPct = 0.35 + (domainStrength / 10) * 0.08;
-  const dofollow = Math.round(backlinks * dofollowPct);
-  const nofollow = Math.max(0, backlinks - dofollow);
+  /*
+   * The one place a link lookup is allowed to spend budget: the user has
+   * explicitly asked to analyse this domain. Everywhere else reads the cache.
+   */
+  const linkProfile = await getLinkProfile(domain, { allowFetch: true });
+  const scored = (await getDomainAuthority([domain])).get(
+    domain.replace(/^www\./, "").toLowerCase(),
+  );
+  const derivedLinks = scoreLinkCounts({
+    openPageRank: scored?.openPageRank ?? null,
+    domainAuthority: scored?.score.value ?? null,
+    measuredReferringDomains:
+      linkProfile?.referringDomains ?? scored?.referringDomains ?? null,
+    url: `https://${domain}/`,
+    pageAuthority: scored?.score.value ?? null,
+    position: 1,
+  });
+
+  /*
+   * No dofollow / nofollow split. It used to be reported as a flat 73% of the
+   * backlink estimate, which was a guess dressed as a measurement: nothing in
+   * the PageRank graph records rel attributes, so the number could not have
+   * been derived from anything.
+   */
+  const backlinks = derivedLinks?.domainBacklinks ?? null;
+
+  // openPageRankPos is written by the authority pass but not returned by it,
+  // so it is read straight from the cache here.
+  const metric = await prisma.domainMetric.findUnique({
+    where: { domain: domain.replace(/^www\./, "").toLowerCase() },
+    select: { openPageRankPos: true },
+  });
+
+  /*
+   * Read the pages Google says cite this domain: who links, and with what
+   * words. Both panels were previously empty whenever the paid webgraph key
+   * was absent, which is always.
+   */
+  const citingUrls = mentions.mentions.map((m) => m.url);
+  const citingHosts = [...new Set(mentions.mentions.map((m) => m.domain))];
+  const citingAuthority = await getDomainAuthority(citingHosts).catch(
+    () => new Map<string, { score: { value: number | null } }>(),
+  );
+  const citations = await readCitations(domain, citingUrls, (host) => {
+    const value = citingAuthority.get(host)?.score.value;
+    return typeof value === "number" ? value : null;
+  }).catch(() => ({ domains: [], anchors: [], pagesRead: 0, pagesFound: 0 }));
 
   const competitors = await competitorsFromSerpCache(
     domain,
@@ -765,24 +991,40 @@ export async function buildExplorerReport(
     for (const m of mentions.mentions) {
       if (seen.has(m.domain) || m.domain === domain) continue;
       seen.add(m.domain);
-      const est = estimateSerpMetrics(m.domain, seen.size);
       competitors.push({
         site: m.domain,
-        ds: dsFromAuthority(est.domainAuthority),
-        links: est.backlinks,
-        domains: est.domainLinkingDomains,
-        keywords: randInt(`${m.domain}|kw`, 40, 9000),
+        ds: null,
+        links: null,
+        domains: null,
+        keywords: 0,
       });
       if (competitors.length >= 12) break;
     }
   }
 
-  const seed = `${domain}|trend`;
-  const trend = Array.from({ length: 12 }, (_, i) => {
-    const base = Math.max(20, Math.round(backlinks * (0.55 + i * 0.035)));
-    const wobble = randInt(`${seed}|${String(i)}`, -Math.round(base * 0.12), Math.round(base * 0.15));
-    return Math.max(5, base + wobble);
+  /*
+   * No backlink history without a link index, and a synthesised curve would be
+   * indistinguishable from a real one on a chart — the most misleading kind of
+   * fabrication. Empty means the UI renders "not available" instead.
+   */
+  /*
+   * Today's reading is written before it is read back, so the chart always
+   * includes the number on the card above it. One row per domain per day:
+   * re-analysing does not spike the curve.
+   */
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const linkHistory = await recordLinkSnapshot(domain, today, {
+    backlinks,
+    referringDomains:
+      linkProfile?.referringDomains ??
+      derivedLinks?.domainLinkingDomains ??
+      null,
+    authority: auth.domainAuthority,
   });
+
+  const trend = linkHistory.map((h) => h.backlinks ?? 0);
+  const trendDates = linkHistory.map((h) => h.day);
 
   const bands = [
     { band: "1-3", min: 1, max: 3 },
@@ -795,59 +1037,118 @@ export async function buildExplorerReport(
   const rankingDistribution = bands.map(({ band, min, max }) => ({
     band,
     count: keywords.filter(
-      (k) =>
-        k.position !== null &&
-        k.position >= min &&
-        k.position <= max,
+      (k) => k.position !== null && k.position >= min && k.position <= max,
     ).length,
   }));
 
-  // If nothing has a measured position, show a gentle estimated split so the
-  // chart isn't empty — still labelled estimated in the UI.
-  if (rankingDistribution.every((b) => b.count === 0) && keywords.length > 0) {
-    const n = keywords.length;
-    rankingDistribution[0]!.count = Math.max(1, Math.round(n * 0.08));
-    rankingDistribution[1]!.count = Math.max(1, Math.round(n * 0.18));
-    rankingDistribution[2]!.count = Math.max(1, Math.round(n * 0.22));
-    rankingDistribution[3]!.count = Math.max(1, Math.round(n * 0.28));
-    rankingDistribution[4]!.count = Math.max(
-      0,
-      n -
-        rankingDistribution[0]!.count -
-        rankingDistribution[1]!.count -
-        rankingDistribution[2]!.count -
-        rankingDistribution[3]!.count,
-    );
-  }
+  /*
+   * When nothing has a measured position the bands stay at zero and the UI
+   * says so. This used to fill them with a fixed 8/18/22/28 split "so the
+   * chart isn't empty", which drew a confident-looking distribution out of no
+   * measurement at all — the numbers were invented, and a reader had no way to
+   * tell. An empty chart that explains itself is the honest version.
+   */
+
+  /*
+   * Pages the crawler actually saw, for the Top Pages tab on a domain we have
+   * no Search Console access to. Ordered by internal inbound links: how the
+   * site itself ranks its content, which is real and readable from the crawl.
+   */
+  const crawledPages = (organic.profile?.pages ?? [])
+    .slice()
+    .sort((a, b) => b.inboundLinks - a.inboundLinks || b.words - a.words)
+    .slice(0, 25)
+    .map((p) => ({
+      url: p.url,
+      path: p.path,
+      title: p.title,
+      inboundLinks: p.inboundLinks,
+      words: p.words,
+    }));
 
   return {
+    crawledPages,
     domain,
     domainStrength,
     competitionScore: avgDifficulty,
     competitionLabel: competitionLabel(avgDifficulty),
     targetCompetition: 33,
     organicCount: keywords.length,
-    organicPreview: keywords.slice(0, 8),
+    estimatedTraffic: keywords.reduce((n, k) => n + (k.estTraffic ?? 0), 0),
+    // Enough to fill the Top Keywords tab, not just the overview card.
+    organicPreview: keywords.slice(0, 25),
     competitors,
     backlinks,
-    dofollow,
-    nofollow,
-    referringDomains: Math.max(
-      mentions.referringDomains,
-      auth.domainLinkingDomains > 0
-        ? Math.min(auth.domainLinkingDomains, Math.round(backlinks * 0.4))
-        : mentions.referringDomains,
-    ),
-    dofollowPct: Math.round(dofollowPct * 10000) / 100,
+    globalRank: metric?.openPageRankPos ?? null,
+    citingDomains: mentions.referringDomains,
+    referringDomains:
+      linkProfile?.referringDomains ??
+      derivedLinks?.domainLinkingDomains ??
+      null,
+    linkDataRelease: linkProfile?.release ?? null,
+    /*
+     * The webgraph lookup is preferred when a key is configured. Without one,
+     * the citing pages we just read are the real answer — measured, if partial,
+     * rather than an empty table.
+     */
+    topLinkingDomains:
+      linkProfile?.top && linkProfile.top.length > 0
+        ? linkProfile.top
+        : citations.domains.map((d) => ({
+            domain: d.domain,
+            hosts: d.links > 0 ? d.links : d.hosts,
+            authority: d.authority,
+          })),
+    topAnchors: citations.anchors,
+    citationsRead: citations.pagesRead,
     trend,
-    referringPreview: competitors.slice(0, 6).map((c) => ({
-      ...c,
-      // Referring domains table uses slightly different link counts.
-      links: Math.max(1, Math.round(c.links * 0.02)),
-    })),
+    trendDates,
+    referringPreview: competitors.slice(0, 6),
     rankingDistribution,
     organicSource: organic.source,
     citingPages: mentions.mentions.length,
   };
 }
 
+/**
+ * Writes today's link reading and returns the domain's history.
+ *
+ * Upserted on (domain, day) so looking at the same site five times in an
+ * afternoon leaves one point, not five. Failures are swallowed: a chart is not
+ * worth failing a report over.
+ */
+async function recordLinkSnapshot(
+  domain: string,
+  day: Date,
+  reading: {
+    backlinks: number | null;
+    referringDomains: number | null;
+    authority: number | null;
+  },
+): Promise<{ day: string; backlinks: number | null }[]> {
+  try {
+    if (reading.backlinks !== null || reading.referringDomains !== null) {
+      await prisma.domainLinkSnapshot.upsert({
+        where: { domain_day: { domain, day } },
+        create: { domain, day, ...reading },
+        update: reading,
+      });
+    }
+
+    const since = new Date(day);
+    since.setUTCFullYear(since.getUTCFullYear() - 1);
+
+    const rows = await prisma.domainLinkSnapshot.findMany({
+      where: { domain, day: { gte: since } },
+      orderBy: { day: "asc" },
+      select: { day: true, backlinks: true },
+    });
+
+    return rows.map((r) => ({
+      day: r.day.toISOString().slice(0, 10),
+      backlinks: r.backlinks,
+    }));
+  } catch {
+    return [];
+  }
+}

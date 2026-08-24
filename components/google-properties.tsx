@@ -49,6 +49,7 @@ export function GoogleProperties({
   const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
+
     setLoading(true);
     try {
       const res = await fetch("/api/google/properties");
@@ -134,6 +135,8 @@ export function GoogleProperties({
     );
   }
 
+  
+
   const picker = (
     label: string,
     options: Option[],
@@ -187,6 +190,7 @@ export function GoogleProperties({
           Refresh
         </Button>
       </div>
+      
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {picker(
@@ -215,11 +219,12 @@ export function GoogleProperties({
         )}
       </div>
 
+
       {(links.gscSiteUrl !== null || links.ga4PropertyId !== null) && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 text-xs text-success">
             <Check className="size-3.5" aria-hidden />
-            Linked — used automatically for rank tracking, metrics and content
+            Linked used automatically for rank tracking, metrics and content
             intelligence
           </span>
           <div className="flex-1" />

@@ -314,13 +314,14 @@ export function DraftEditor({
 
   return (
     <section
-      className="rounded-lg border border-border bg-card"
+      className="overflow-hidden rounded-lg border border-border bg-card"
       aria-label={`Draft: ${idea.title}`}
     >
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold leading-snug">{idea.title}</h2>
-          {/* Which moment this draft came from — the spec asks for it to stay visible. */}
+      <header className="flex items-start justify-between gap-2 border-b border-border px-3 py-3 sm:px-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold leading-snug break-words">
+            {idea.title}
+          </h2>
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="rounded bg-primary/12 px-1.5 py-0.5 font-medium text-primary">
               {MOMENT_LABEL[idea.moment] ?? idea.moment}
@@ -328,16 +329,24 @@ export function DraftEditor({
             <span className="rounded border border-border px-1.5 py-0.5">
               {CATEGORY_LABEL[idea.category] ?? idea.category}
             </span>
-            <span className="min-w-0">{idea.rationale}</span>
+            <span className="hidden min-w-0 line-clamp-1 sm:inline">
+              {idea.rationale}
+            </span>
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close draft">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0"
+          onClick={onClose}
+          aria-label="Close draft"
+        >
           <X />
         </Button>
       </header>
 
       {idea.qaNotes !== null && idea.qaNotes !== "" && (
-        <div className="border-b border-warning/40 bg-warning/5 px-4 py-2.5">
+        <div className="border-b border-warning/40 bg-warning/5 px-3 py-2.5 sm:px-4">
           <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
             <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
             Check before publishing
@@ -350,12 +359,12 @@ export function DraftEditor({
         </div>
       )}
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-        <div className="min-w-0 overflow-hidden rounded-lg border border-border">
+      <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border">
           {editor ? (
             <>
               <Toolbar editor={editor} />
-              <div className="px-3 py-3 sm:px-4">
+              <div className="overflow-x-auto px-3 py-3 sm:px-4">
                 <EditorContent editor={editor} />
               </div>
             </>
@@ -438,19 +447,21 @@ export function DraftEditor({
         </div>
       </div>
 
-      <footer className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-        <Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
-          {saving ? <Loader2 className="animate-spin" /> : <Check />}
-          {dirty ? "Save changes" : "Saved"}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void copyForWordPress()}
-        >
-          {copied ? <ClipboardCheck /> : <Copy />}
-          Copy for WordPress
-        </Button>
+      <footer className="flex flex-col gap-2 border-t border-border px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-4">
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
+            {saving ? <Loader2 className="animate-spin" /> : <Check />}
+            {dirty ? "Save changes" : "Saved"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void copyForWordPress()}
+          >
+            {copied ? <ClipboardCheck /> : <Copy />}
+            Copy for WordPress
+          </Button>
+        </div>
         <span className="text-[11px] text-muted-foreground">
           Nothing publishes automatically — review, then paste into WordPress.
         </span>

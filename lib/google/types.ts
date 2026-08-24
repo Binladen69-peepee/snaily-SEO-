@@ -21,6 +21,16 @@ export const LOGIN_SCOPES = [
   "https://www.googleapis.com/auth/analytics.readonly",
 ];
 
+/**
+ * Requested only when Drafter saves to Drive — not at sign-in.
+ *
+ * drive.file lets the app create a "Snaily SEO Drafts" folder and write Docs
+ * into it, without reading the rest of the user's Drive.
+ */
+export const DRIVE_SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+];
+
 
 /** Days of history pulled per sync. Google reports lag ~2 days. */
 export const SYNC_LOOKBACK_DAYS = 90;

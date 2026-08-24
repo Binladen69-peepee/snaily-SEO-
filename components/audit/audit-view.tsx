@@ -509,17 +509,17 @@ export function AuditView({
             />
           ) : (
             <>
-              <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
+              <div className="scroll-x rounded-lg border border-border">
+                <table className="w-full min-w-[32rem] text-sm">
                   <caption className="sr-only">Crawled pages and their SEO issues</caption>
                   <thead className="bg-muted/50">
                     <tr>
                       <th scope="col" className="w-8 px-3 py-2.5" />
                       {[
                         { k: "url", l: "Page", a: "left" },
-                        { k: "status", l: "Status", a: "right" },
-                        { k: "title", l: "Title", a: "left" },
-                        { k: "wordCount", l: "Words", a: "right" },
+                        { k: "status", l: "Status", a: "right", hide: "md" },
+                        { k: "title", l: "Title", a: "left", hide: "lg" },
+                        { k: "wordCount", l: "Words", a: "right", hide: "md" },
                         { k: "issueScore", l: "Issues", a: "right" },
                       ].map((c) => (
                         <th
@@ -532,7 +532,11 @@ export function AuditView({
                                 : "descending"
                               : "none"
                           }
-                          className={`px-3 py-2.5 font-medium ${c.a === "right" ? "text-right" : "text-left"}`}
+                          className={`px-3 py-2.5 font-medium ${c.a === "right" ? "text-right" : "text-left"} ${
+                            "hide" in c && c.hide === "md" ? "hidden md:table-cell" : ""
+                          } ${
+                            "hide" in c && c.hide === "lg" ? "hidden lg:table-cell" : ""
+                          }`}
                         >
                           <button
                             type="button"
@@ -581,9 +585,12 @@ export function AuditView({
                               <span className="block truncate font-medium">
                                 {p.path}
                               </span>
+                              <span className="block truncate text-xs text-muted-foreground lg:hidden">
+                                {p.title === "" ? "— missing title —" : p.title}
+                              </span>
                             </td>
 
-                            <td className="tabular px-3 py-2.5 text-right">
+                            <td className="tabular hidden px-3 py-2.5 text-right md:table-cell">
                               <span
                                 className={
                                   p.status >= 400 || p.status === 0
@@ -597,7 +604,7 @@ export function AuditView({
                               </span>
                             </td>
 
-                            <td className="max-w-xs px-3 py-2.5">
+                            <td className="hidden max-w-xs px-3 py-2.5 lg:table-cell">
                               <span
                                 className={`block truncate ${p.title === "" ? "text-destructive" : "text-muted-foreground"}`}
                               >
@@ -605,7 +612,7 @@ export function AuditView({
                               </span>
                             </td>
 
-                            <td className="tabular px-3 py-2.5 text-right">
+                            <td className="tabular hidden px-3 py-2.5 text-right md:table-cell">
                               {formatNumber(p.wordCount)}
                             </td>
 

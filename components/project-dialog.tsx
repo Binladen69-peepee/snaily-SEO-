@@ -55,7 +55,7 @@ export function ProjectDialog({ open, onOpenChange, project }: Props) {
         },
       );
 
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; id?: string };
 
       if (!res.ok) {
         setError(data.error ?? "Something went wrong. Please try again.");
@@ -66,6 +66,14 @@ export function ProjectDialog({ open, onOpenChange, project }: Props) {
       toast.success(isEdit ? "Project updated" : "Project created");
       setLoading(false);
       onOpenChange(false);
+
+      // A new project goes straight into setup — connecting WordPress and
+      // Google is what makes every other screen show real data.
+      if (!isEdit && data.id !== undefined) {
+        router.push(`/projects/${data.id}/setup`);
+        return;
+      }
+
       router.refresh();
     } catch {
       setError("Could not reach the server. Check your connection and try again.");

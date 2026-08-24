@@ -10,3 +10,35 @@ build
 next-env.d.ts
 
 .vercel
+
+# Scratch build dirs — scripts/compile.mjs emits compiled TS here so the tests
+# can import the real modules. Removed on exit; ignored in case one is not.
+.linktest-*
+.overviewtest-*
+.editortest-*
+.afftest-*
+.mergetest-*
+.qgtest-*
+.tstest-*
+.blocktest-*
+.tpltest-*
+.livetest-*
+.jobtest-*
+.jobstore-*
+.aitest-*
+.wpcheck-*
+.importaff-*
+.phplint-*
+.phpsrc-*
+.pickertest-*
+.phtest-*
+.ddtest-*
+.ddrun-*
+.enrun-*
+.fstest-*
+.styletest-*
+.phpdump-*
+.promptsize-*
+.strogscore-*
+.strogcmp-*
+poll-tmp.mjs

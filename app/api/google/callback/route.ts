@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { createSession } from "@/lib/auth";
+import { createSession, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { saveGoogleAccount } from "@/lib/google/account";
 import {
@@ -85,6 +85,35 @@ export async function GET(req: Request) {
     where: { email: email.toLowerCase() },
     select: { id: true, email: true, name: true },
   });
+
+  /*
+   * Incremental Drive grant: the author is already signed in and we only
+   * needed extra scopes. Attach the tokens to their session account and send
+   * them back to Drafter. The Google email does not have to match the login
+   * email — Drive is a permission, not a new sign-in.
+   */
+  if (state.intent === "drive") {
+    const session = await getSession();
+    if (!session) {
+      return done(
+        `error=${encodeURIComponent("Sign in first, then connect Google Drive.")}`,
+      );
+    }
+    try {
+      await saveGoogleAccount(session.userId, email.toLowerCase(), tokens);
+    } catch {
+      const res = NextResponse.redirect(
+        `${origin}${state.next ?? "/content-assistant"}?drive=error`,
+      );
+      res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
+      return res;
+    }
+    const res = NextResponse.redirect(
+      `${origin}${state.next ?? "/content-assistant"}?drive=connected`,
+    );
+    res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
+    return res;
+  }
 
   if (!user) {
     return done(

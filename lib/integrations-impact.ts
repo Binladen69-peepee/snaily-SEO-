@@ -44,7 +44,7 @@ export const DEPENDENTS: Record<string, Dependent[]> = {
     },
     {
       feature: "Quick Difficulty",
-      href: "/keywords/difficulty",
+      href: "/difficulty",
       level: "degrades",
       consequence: "Difficulty is computed from the live SERP, so with no SERP it scores generated results.",
     },
@@ -62,7 +62,7 @@ export const DEPENDENTS: Record<string, Dependent[]> = {
         "Live position checks stop with \"Live rank checks need SERPAPI_KEY\". Positions already recorded, and anything sourced from Search Console, still show.",
     },
     {
-      feature: "Content Optimizer",
+      feature: "Drafter",
       href: "/content-assistant",
       level: "degrades",
       consequence: "Target terms are derived from the ranking pages, so they come from generated results instead.",
@@ -78,7 +78,7 @@ export const DEPENDENTS: Record<string, Dependent[]> = {
 
   GROK_API_KEY: [
     {
-      feature: "Content Assistant — article generation",
+      feature: "Drafter — article generation",
       href: "/content-assistant",
       level: "stops",
       consequence: "Every AI writing action fails. Existing articles remain readable and editable.",

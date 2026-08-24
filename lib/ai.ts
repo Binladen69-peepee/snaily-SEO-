@@ -1,5 +1,5 @@
 /**
- * Grok (xAI) client for the Content Assistant.
+ * Grok (xAI) client for Drafter and GEO Lab.
  *
  * Single point of contact with the model, mirroring how `lib/keywords/provider`
  * isolates the SERP source: nothing outside this file knows which model is in
@@ -9,8 +9,7 @@
  * another vendor by changing ENDPOINT and the key.
  */
 
-/** Long-form sections take a while; well under Vercel's 60s ceiling. */
-const TIMEOUT_MS = 55_000;
+import { estimateTokens, stageTimeoutMs } from "@/lib/ai-policy";
 
 export class AiError extends Error {
   constructor(
@@ -20,6 +19,100 @@ export class AiError extends Error {
   ) {
     super(message);
     this.name = "AiError";
+  }
+
+  /**
+   * Whether the identical request could plausibly succeed later.
+   *
+   * The staged pipeline reads this to choose between backing off and marking a
+   * stage permanently failed. Retrying a rejected API key spends the retry
+   * budget and still fails, so the default is "no" and each subclass opts in.
+   */
+  get retryable(): boolean {
+    return false;
+  }
+
+  /** Stable code for logs and the failure UI. Never carries provider text. */
+  get code(): string {
+    return "ai_error";
+  }
+}
+
+/**
+ * The provider said "not now".
+ *
+ * Carries its own reset estimate so a worker waits exactly as long as it was
+ * told to rather than guessing, and separates a per-minute burst cap (worth
+ * waiting out) from an exhausted daily allowance (not).
+ */
+export class AiRateLimit extends AiError {
+  constructor(
+    message: string,
+    readonly retryAfterMs: number,
+    readonly daily: boolean,
+  ) {
+    super(message, daily);
+    this.name = "AiRateLimit";
+  }
+
+  override get retryable(): boolean {
+    return !this.daily;
+  }
+
+  override get code(): string {
+    return this.daily ? "ai_daily_quota" : "ai_rate_limit";
+  }
+}
+
+/**
+ * The configured model is gone.
+ *
+ * Its own class because this is the failure that took the Drafter down
+ * silently once already: Groq retired llama-3.3-70b, the key stayed valid, and
+ * every generation returned a 502 that named nothing. A fallback may only be
+ * used when the project explicitly allows one, and the substitution is
+ * recorded, so nobody has to guess which model wrote a draft.
+ */
+export class AiModelUnavailable extends AiError {
+  constructor(
+    message: string,
+    readonly model: string,
+  ) {
+    super(message, true);
+    this.name = "AiModelUnavailable";
+  }
+
+  override get code(): string {
+    return "ai_model_unavailable";
+  }
+}
+
+/**
+ * The reply was cut off before the model finished writing.
+ *
+ * Separate from a rate limit because the fix is the opposite one: waiting
+ * changes nothing, and the stage needs either more room or less to say. Marked
+ * retryable so a one-off overrun is absorbed, with the cause named rather than
+ * reported as an empty response.
+ */
+export class AiTruncated extends AiError {
+  override get retryable(): boolean {
+    return true;
+  }
+
+  override get code(): string {
+    return "ai_truncated";
+  }
+}
+
+/** Network trouble or a timeout. Worth another go. */
+export class AiUnreachable extends AiError {
+  override get retryable(): boolean {
+    return true;
+  }
+
+  override get code(): string {
+    return "ai_unreachable";
   }
 }
 
@@ -72,8 +165,17 @@ const ENDPOINTS: Record<AiVendor, string> = {
 };
 
 /** Sensible default per vendor; both are overridable. */
+/*
+ * Groq retired llama-3.3-70b-versatile, and the Drafter failed outright on
+ * every generation because of it: the key was valid, so nothing looked
+ * misconfigured, and the only symptom was a 502 from the drafter route.
+ * gpt-oss-120b is the largest general model the account can reach today.
+ *
+ * Overridable with GROK_MODEL, which is the real answer when this happens
+ * again — vendors retire models faster than a deploy cycle.
+ */
 const DEFAULT_MODEL: Record<AiVendor, string> = {
-  groq: "llama-3.3-70b-versatile",
+  groq: "openai/gpt-oss-120b",
   xai: "grok-4",
 };
 
@@ -90,6 +192,40 @@ export function aiModel(): string {
   return configured || DEFAULT_MODEL[aiVendor()];
 }
 
+/**
+ * Models that think before they answer.
+ *
+ * These spend part of the completion budget on hidden reasoning tokens and only
+ * then write the reply. That matters here because the budget is small and
+ * fixed: measured on this account, openai/gpt-oss-120b burns about 256 tokens
+ * thinking about a 220-word intro, so a stage that asked for 400 got a reply
+ * cut off mid-sentence, and one that asked for 700 on a harder prompt got an
+ * empty string. The Drafter reported that as "Groq returned an empty response",
+ * which is true and useless.
+ */
+const REASONING_MODELS = /gpt-oss|deepseek-r1|qwen3|^o[13]\b/i;
+
+export function isReasoningModel(model: string): boolean {
+  return REASONING_MODELS.test(model);
+}
+
+/**
+ * How much thinking to pay for.
+ *
+ * "low" is the default because the difference is dramatic and free: the same
+ * intro prompt spends 256 reasoning tokens at the provider default and 31 at
+ * low, and the low-effort reply was the longer and better-formed of the two.
+ * These are structured writing tasks against an explicit brief, not puzzles.
+ * Overridable, including to "off" for a model that rejects the parameter.
+ */
+function reasoningEffort(): string {
+  const configured = env("AI_REASONING_EFFORT").toLowerCase();
+  if (["low", "medium", "high", "off", "none"].includes(configured)) {
+    return configured;
+  }
+  return "low";
+}
+
 /** Longest a rate-limit wait may be before it threatens the request budget. */
 const MAX_RETRY_WAIT_MS = 15_000;
 
@@ -99,6 +235,53 @@ const MAX_RETRY_WAIT_MS = 15_000;
  * Both vendors send `retry-after` (seconds); Groq also sends a reset hint like
  * "7.66s" or "210ms". Zero means "do not retry".
  */
+/**
+ * True when the 429 is an exhausted *daily* allowance rather than a burst cap.
+ *
+ * Groq words this as "tokens per day (TPD)"; xAI and others use "daily". A
+ * burst cap clears in seconds and is worth retrying; a daily cap is not.
+ */
+function isDailyQuota(body: string): boolean {
+  return /per day|\bTPD\b|\bRPD\b|daily (?:limit|quota|token)/i.test(body);
+}
+
+/** The provider's own reset estimate, e.g. "1h56m6.432s" → "1h56m". */
+/**
+ * The reset window as milliseconds, for a caller that wants to wait it out.
+ *
+ * Same source as `resetHint`, parsed rather than formatted. A daily allowance
+ * that comes back in nine minutes is a wait, not a failure, and the pipeline
+ * can only treat it as one if it knows how long.
+ */
+function resetMs(body: string): number {
+  const match = /try again in\s+([\dhms.]+)/i.exec(body);
+  if (!match?.[1]) return 0;
+
+  let total = 0;
+  for (const part of match[1].matchAll(/([\d.]+)\s*(h|m|s|ms)/gi)) {
+    const value = Number.parseFloat(part[1] ?? "0");
+    const unit = (part[2] ?? "s").toLowerCase();
+    if (!Number.isFinite(value)) continue;
+    total +=
+      unit === "h"
+        ? value * 3_600_000
+        : unit === "m"
+          ? value * 60_000
+          : unit === "ms"
+            ? value
+            : value * 1_000;
+  }
+  return Math.round(total);
+}
+
+function resetHint(body: string): string | null {
+  const match = /try again in\s+([\dhms.]+)/i.exec(body);
+  if (!match?.[1]) return null;
+  // Drop fractional seconds — "1h56m6.432s" is noise at this scale.
+  const trimmed = match[1].replace(/(\d+)\.\d+s/, "$1s");
+  return /^(\d+h)?(\d+m)?/.exec(trimmed)?.[0] || trimmed;
+}
+
 function retryDelayMs(res: Response): number {
   const candidates = [
     res.headers.get("retry-after"),
@@ -127,8 +310,49 @@ function retryDelayMs(res: Response): number {
 }
 
 type ChatResponse = {
-  choices?: { message?: { content?: string } }[];
+  choices?: {
+    message?: { content?: string; reasoning?: string };
+    finish_reason?: string;
+  }[];
   error?: { message?: string } | string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+};
+
+export type AiUsage = {
+  input: number;
+  output: number;
+  total: number;
+  /** False when the provider did not report usage and these are estimates. */
+  measured: boolean;
+};
+
+export type AiCompletion = {
+  text: string;
+  usage: AiUsage;
+  provider: AiVendor;
+  model: string;
+  durationMs: number;
+};
+
+export type CompleteOptions = {
+  system: string;
+  user: string;
+  maxTokens?: number;
+  temperature?: number;
+  /**
+   * Wait out a burst rate limit inside this request.
+   *
+   * Off by default for staged work: a job that owns its own retry schedule
+   * should not also be sleeping inside the HTTP call, because that time comes
+   * out of the invocation budget it needs for the next stage.
+   */
+  retryOnRateLimit?: boolean;
+  /** Overrides the configured model, for an explicitly allowed fallback. */
+  model?: string;
 };
 
 /**
@@ -138,13 +362,18 @@ type ChatResponse = {
  * name and an expired key produce very different fixes, and the raw xAI
  * message is passed through so the reason is never guesswork.
  */
-export async function complete(
-  system: string,
-  user: string,
-  maxTokens = 2000,
-  /** Internal: one bounded retry after a rate limit. */
-  retryAfterLimit = true,
-): Promise<string> {
+export async function completeDetailed(
+  opts: CompleteOptions,
+): Promise<AiCompletion> {
+  const {
+    system,
+    user,
+    maxTokens = 2000,
+    temperature = 0.7,
+    retryOnRateLimit = false,
+  } = opts;
+  const model = opts.model ?? aiModel();
+  const startedAt = Date.now();
   const key = aiKey();
   if (key === "") {
     throw new AiError(
@@ -164,18 +393,28 @@ export async function complete(
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: aiModel(),
+        model,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        temperature: 0.7,
+        temperature,
         max_tokens: maxTokens,
+        /*
+         * Only sent to models that have the setting. A model without it
+         * rejects the whole request as an unknown parameter, which would turn
+         * a working configuration into a total outage on the next model swap.
+         */
+        ...(aiVendor() === "groq" &&
+        isReasoningModel(model) &&
+        !["off", "none"].includes(reasoningEffort())
+          ? { reasoning_effort: reasoningEffort() }
+          : {}),
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(stageTimeoutMs()),
     });
   } catch {
-    throw new AiError(
+    throw new AiUnreachable(
       `Could not reach the ${vendor} API. Check the network and try again.`,
     );
   }
@@ -205,6 +444,27 @@ export async function complete(
         true,
       );
     }
+    // Groq's free tier reports oversized prompts as a model error
+    // ("Request too large for model `llama-3.3-70b-versatile`… TPM"), which
+    // would otherwise send the operator to change GROK_MODEL.
+    if (
+      /request too large|tokens per minute|\bTPM\b|please reduce your message size/i.test(
+        raw,
+      )
+    ) {
+      /*
+       * The provider words this as a size problem, but on a metered tier the
+       * cause is almost always the per-minute token allowance: the identical
+       * request succeeds a minute later, untouched. "Too large" sent an
+       * operator off to shorten a draft that was never the problem, so it is
+       * reported as what it is and handed a wait long enough to clear.
+       */
+      throw new AiRateLimit(
+        `${vendor} has no tokens left this minute — the limit counts the prompt and the reply together.`,
+        30_000,
+        false,
+      );
+    }
     // Checked before the model branch: a rate-limit body names the model
     // ("Rate limit reached for model `llama-3.3-70b-versatile`…"), which would
     // otherwise be reported as an unusable model and send the operator off to
@@ -215,18 +475,48 @@ export async function complete(
       // the common case; anything longer would risk the serverless ceiling, so
       // it is reported rather than retried again.
       const wait = retryDelayMs(res);
-      if (retryAfterLimit && wait > 0) {
+      if (retryOnRateLimit && wait > 0 && !isDailyQuota(raw)) {
         await new Promise((r) => setTimeout(r, wait));
-        return complete(system, user, maxTokens, false);
+        return completeDetailed({ ...opts, retryOnRateLimit: false });
       }
-      throw new AiError(
-        `${vendor} rate limit reached. Wait a moment and retry${raw === "" ? "" : ` — ${raw}`}`,
+
+      /*
+       * A per-minute cap and an exhausted daily allowance both arrive as 429,
+       * but the fix is completely different. Telling someone to "wait a moment"
+       * when their quota resets in two hours sends them to retry repeatedly for
+       * nothing, so the two are separated and the daily case names the actual
+       * remedy instead of pasting the provider's billing pitch.
+       */
+      if (isDailyQuota(raw)) {
+        const resets = resetHint(raw);
+        throw new AiRateLimit(
+          /*
+           * No model is named as the remedy. The previous wording recommended
+           * llama-3.1-8b-instant, which this account cannot even reach any
+           * more - a suggestion that sends someone to configure something
+           * impossible is worse than none, and which models a key can use
+           * changes without warning.
+           */
+          `Daily ${vendor} token allowance used up for "${model}"${
+            resets === null ? "" : `, resets in ${resets}`
+          }. Wait for the reset, or set GROK_MODEL to another model your key can reach.`,
+          // Carried so a background job can wait the window out instead of
+          // throwing the author's article away over a quota that refills.
+          resetMs(raw),
+          true,
+        );
+      }
+
+      throw new AiRateLimit(
+        `${vendor} rate limit reached — too many requests in a short window.`,
+        wait > 0 ? wait : 10_000,
+        false,
       );
     }
     if (res.status === 404 || /model/i.test(raw)) {
-      throw new AiError(
-        `${vendor} could not use the model "${aiModel()}". Set GROK_MODEL to one your key can access${raw === "" ? "" : ` — ${raw}`}`,
-        true,
+      throw new AiModelUnavailable(
+        `${vendor} could not use the model "${model}". Set GROK_MODEL to one your key can access${raw === "" ? "" : ` — ${raw}`}`,
+        model,
       );
     }
     throw new AiError(
@@ -236,12 +526,75 @@ export async function complete(
     );
   }
 
-  const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
-  if (text === "") {
-    throw new AiError(`${vendor} returned an empty response. Try rephrasing.`);
+  const choice = payload.choices?.[0];
+  const text = choice?.message?.content?.trim() ?? "";
+
+  /*
+   * Empty content with a length stop is a reasoning model that spent the whole
+   * completion budget thinking. Naming it that way is the difference between
+   * an operator raising AI_MAX_OUTPUT_TOKENS and an operator rewriting a prompt
+   * that was never the problem.
+   */
+  if (text === "" && choice?.finish_reason === "length") {
+    throw new AiTruncated(
+      `${vendor} used the whole reply budget on "${model}" before writing anything.` +
+        (isReasoningModel(model)
+          ? " This model reasons before it answers; lower AI_REASONING_EFFORT or raise AI_MAX_OUTPUT_TOKENS."
+          : " Raise AI_MAX_OUTPUT_TOKENS."),
+    );
   }
 
-  return text;
+  if (choice?.finish_reason === "length" && text !== "") {
+    throw new AiTruncated(
+      `${vendor} cut the reply off at the token limit, so the section is unfinished.`,
+    );
+  }
+
+  if (text === "") {
+    throw new AiTruncated(`${vendor} returned an empty response.`);
+  }
+
+  /*
+   * Real usage when the provider reports it, an estimate when it does not, and
+   * the difference is recorded rather than smoothed over: a cost figure nobody
+   * can trace back to a bill should not be shown to a client as though it were
+   * one.
+   */
+  const measured = typeof payload.usage?.prompt_tokens === "number";
+  const input = payload.usage?.prompt_tokens ?? estimateTokens(system + user);
+  const output = payload.usage?.completion_tokens ?? estimateTokens(text);
+
+  return {
+    text,
+    usage: {
+      input,
+      output,
+      total: payload.usage?.total_tokens ?? input + output,
+      measured,
+    },
+    provider: aiVendor(),
+    model,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
+/** Text-only completion. The original signature, kept for existing callers. */
+export async function complete(
+  system: string,
+  user: string,
+  maxTokens = 2000,
+  /** One bounded wait-and-retry after a burst rate limit. */
+  retryAfterLimit = true,
+  temperature = 0.7,
+): Promise<string> {
+  const result = await completeDetailed({
+    system,
+    user,
+    maxTokens,
+    temperature,
+    retryOnRateLimit: retryAfterLimit,
+  });
+  return result.text;
 }
 
 /** Model-facing rules shared by every generation. */

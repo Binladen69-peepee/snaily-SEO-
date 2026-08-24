@@ -47,14 +47,19 @@ const EMPTY_FILTERS: Filters = {
 export function BulkAnalyzer({
   projectId,
   isMock,
+  initialKeywords = "",
+  initialCountry = "us",
 }: {
   projectId: string | null;
   isMock: boolean;
+  /** Pre-filled from another screen, e.g. Deep Dive's Bulk Check button. */
+  initialKeywords?: string;
+  initialCountry?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [input, setInput] = useState("");
-  const [country, setCountry] = useState("us");
+  const [input, setInput] = useState(initialKeywords);
+  const [country, setCountry] = useState(initialCountry);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,23 +109,50 @@ export function BulkAnalyzer({
     setError(null);
     setSelected(new Set());
 
-    const res = await fetch("/api/keywords/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keywords: input, country }),
-    });
+    /*
+     * Everything below runs inside try/finally.
+     *
+     * It did not, and that was the whole bug: a bulk run is dozens of live
+     * SERP lookups, and when it exceeded the function timeout the platform
+     * returned an HTML error page. `res.json()` threw on it, the rejection
+     * escaped, and `setLoading(false)` never ran — so the button sat on its
+     * spinner forever with no message. Any failure now ends with the spinner
+     * cleared and a reason on screen.
+     */
+    try {
+      const res = await fetch("/api/keywords/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keywords: input, country }),
+      });
 
-    const data = (await res.json()) as { error?: string; results?: Row[] };
+      // A gateway timeout or a proxy error page is not JSON.
+      let data: { error?: string; results?: Row[] } = {};
+      try {
+        data = (await res.json()) as { error?: string; results?: Row[] };
+      } catch {
+        setError(
+          res.status === 504 || res.status === 502
+            ? "That took too long. Try fewer keywords at once."
+            : `The server returned an unexpected response (${String(res.status)}).`,
+        );
+        setRows(null);
+        return;
+      }
 
-    if (!res.ok) {
-      setError(data.error ?? "Could not analyze these keywords.");
+      if (!res.ok) {
+        setError(data.error ?? "Could not analyze these keywords.");
+        setRows(null);
+        return;
+      }
+
+      setRows(data.results ?? []);
+    } catch {
+      setError("Could not reach the server. Your keywords are still here.");
       setRows(null);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setRows(data.results ?? []);
-    setLoading(false);
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {

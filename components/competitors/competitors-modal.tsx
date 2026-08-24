@@ -174,13 +174,13 @@ export function CompetitorsModal({
                       </a>
                     </td>
                     <td className="tabular px-2 py-2.5 text-right font-medium">
-                      {r.ds.toFixed(1)}
+                      {r.ds === null ? "—" : r.ds.toFixed(1)}
                     </td>
                     <td className="tabular px-2 py-2.5 text-right">
-                      {formatNumber(r.links)}
+                      {r.links === null ? "—" : `~${formatNumber(r.links)}`}
                     </td>
                     <td className="tabular px-2 py-2.5 text-right">
-                      {formatNumber(r.domains)}
+                      {r.domains === null ? "—" : `~${formatNumber(r.domains)}`}
                     </td>
                     <td className="tabular px-4 py-2.5 text-right">
                       {formatNumber(r.keywords)}
@@ -195,7 +195,7 @@ export function CompetitorsModal({
         <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
           <p className="text-xs text-muted-foreground">Found in SERPs</p>
           <Link
-            href={`/competitors/gap?them=${encodeURIComponent(domain)}`}
+            href={`/competitor-gap?them=${encodeURIComponent(domain)}`}
             className={cn(
               "inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90",
             )}

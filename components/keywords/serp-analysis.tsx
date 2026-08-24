@@ -12,6 +12,7 @@ import {
 } from "@/lib/keywords/serp";
 import type { SerpResult } from "@/lib/keywords/types";
 import { UNAVAILABLE_NOTE } from "@/lib/keywords/authority";
+import { LINK_COUNT_NOTE } from "@/lib/metrics/link-counts";
 import { ctrForPosition } from "@/lib/keywords/ctr";
 import { formatNumber } from "@/lib/keywords/format";
 import { cn } from "@/lib/utils";
@@ -146,13 +147,19 @@ export function SerpAnalysis({ results }: { results: SerpResult[] }) {
 
                     {SERP_METRIC_KEYS.map((k) => {
                       const v = r[k];
+                      const linkMetric =
+                        k === "pageLinkingDomains" ||
+                        k === "domainLinkingDomains" ||
+                        k === "backlinks";
                       return (
                         <td key={k} className="px-1 py-1.5">
                           <span
                             title={
                               v === null
                                 ? UNAVAILABLE_NOTE
-                                : `${SERP_METRIC_LABEL[k]}: ${String(v)}`
+                                : linkMetric
+                                  ? `${SERP_METRIC_LABEL[k]}: ${String(v)} — ${LINK_COUNT_NOTE}`
+                                  : `${SERP_METRIC_LABEL[k]}: ${String(v)}`
                             }
                             className={cn(
                               "tabular block rounded px-1.5 py-1 text-center",
@@ -161,7 +168,13 @@ export function SerpAnalysis({ results }: { results: SerpResult[] }) {
                                 : cellTint(k, v),
                             )}
                           >
-                            {v === null ? "N/A" : metric(v)}
+                            {/*
+                              Link counts carry a tilde because they are
+                              modelled from PageRank, which cannot measure a
+                              link count. Without a visible marker a figure
+                              like 2,458,912 reads as measured.
+                            */}
+                            {v === null ? "N/A" : linkMetric ? `~${metric(v)}` : metric(v)}
                           </span>
                         </td>
                       );
@@ -256,9 +269,8 @@ export function SerpAnalysis({ results }: { results: SerpResult[] }) {
                 ⓘ Links Score
               </p>
               {/*
-                The score is built from PA and linking domains. Without a
-                backlink provider there is nothing to build it from, and a
-                placeholder number would read as a measurement.
+                The score is built from PA and linking domains derived from
+                Common Crawl PageRank on the ranking domains.
               */}
               {stats.linksScore === null || band === null ? (
                 <>
@@ -266,8 +278,8 @@ export function SerpAnalysis({ results }: { results: SerpResult[] }) {
                     N/A
                   </p>
                   <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                    Needs a backlink index. Keyword Difficulty above is measured
-                    from the live SERP and is unaffected.
+                    Link counts are derived from rank and authority on the
+                    domains above. Search again if this stays empty.
                   </p>
                 </>
               ) : (

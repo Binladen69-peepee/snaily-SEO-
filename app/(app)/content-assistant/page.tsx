@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getActiveProject } from "@/lib/projects";
 
-export const metadata = { title: "Content Assistant · Snaily SEO" };
+export const metadata = { title: "Drafter · Snaily SEO" };
 
 export default async function ContentAssistantPage() {
   const [session, project] = await Promise.all([
@@ -25,6 +25,8 @@ export default async function ContentAssistantPage() {
             keyword: true,
             status: true,
             content: true,
+            mode: true,
+            phase: true,
             updatedAt: true,
           },
         })
@@ -37,12 +39,14 @@ export default async function ContentAssistantPage() {
     status: a.status as ArticleStatus,
     updatedAt: a.updatedAt.toISOString(),
     words: markdownWords(a.content),
+    mode: a.mode === "drafter" ? "drafter" : "optimize",
+    phase: a.phase === "outline" || a.phase === "draft" || a.phase === "proofed" ? a.phase : "",
   }));
 
   if (!project) {
     return (
       <div className="mx-auto max-w-5xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Articles</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Drafter</h1>
         <div className="mt-5 rounded-lg border border-dashed border-border bg-card/50 px-6 py-14 text-center">
           <p className="font-medium">Create a project first</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">

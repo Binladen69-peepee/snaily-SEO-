@@ -35,14 +35,14 @@ function SerpPreview({ title, description, url }: { title: string; description: 
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="min-w-0 rounded-lg border border-border bg-card p-3 sm:p-4">
       <p className="mb-2 text-xs font-medium text-muted-foreground">
         Google snippet preview
       </p>
-      <div className="max-w-xl space-y-0.5 rounded-md bg-background p-3">
-        <p className="truncate text-sm text-[#bdc1c6]">{displayUrl}</p>
+      <div className="max-w-full space-y-0.5 overflow-hidden rounded-md bg-background p-3">
+        <p className="truncate text-xs text-[#bdc1c6] sm:text-sm">{displayUrl}</p>
         <p
-          className="text-xl text-[#8ab4f8] leading-snug"
+          className="text-base leading-snug text-[#8ab4f8] sm:text-xl"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -53,7 +53,7 @@ function SerpPreview({ title, description, url }: { title: string; description: 
           {title.trim() !== "" ? title : "Missing page title"}
         </p>
         <p
-          className="text-sm text-[#bdc1c6] leading-relaxed"
+          className="text-xs leading-relaxed text-[#bdc1c6] sm:text-sm"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -77,8 +77,8 @@ function ScoreRing({ score }: { score: number }) {
   const color =
     score >= 80 ? "text-success" : score >= 50 ? "text-warning" : "text-destructive";
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-6">
-      <p className={`tabular text-4xl font-semibold ${color}`}>{score}</p>
+    <div className="flex flex-row items-center justify-center gap-3 rounded-xl border border-border bg-card p-4 sm:flex-col sm:gap-0 sm:p-6">
+      <p className={`tabular text-3xl font-semibold sm:text-4xl ${color}`}>{score}</p>
       <p className="text-xs text-muted-foreground">On-page score</p>
     </div>
   );
@@ -138,7 +138,7 @@ export function OnPageView({
 
   if (projectId === null) {
     return (
-      <div className="mx-auto max-w-4xl space-y-5">
+      <div className="mx-auto w-full max-w-4xl space-y-5">
         <PageHeader
           title="On-Page SEO"
           description="Analyze any URL, preview your Google snippet, and check technical setup."
@@ -160,13 +160,13 @@ export function OnPageView({
   ];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto w-full max-w-4xl space-y-5">
       <PageHeader
         title="On-Page SEO"
         description="Analyze pages, preview snippets, and catch technical issues before Google does."
       />
 
-      <div className="flex flex-wrap gap-1.5" role="tablist">
+      <div className="scroll-x -mx-1 flex gap-1.5 px-1 pb-1" role="tablist">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -177,7 +177,7 @@ export function OnPageView({
               setTab(t.id);
             }}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm transition-colors",
+              "shrink-0 rounded-md px-3 py-1.5 text-sm transition-colors",
               tab === t.id
                 ? "bg-primary/10 font-medium text-primary"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -190,7 +190,7 @@ export function OnPageView({
 
       {tab === "analyze" && (
         <div className="space-y-5">
-          <section className="rounded-lg border border-border bg-card p-4">
+          <section className="rounded-lg border border-border bg-card p-3 sm:p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="min-w-0 flex-1 space-y-1.5">
                 <Label htmlFor="on-page-url">Page URL</Label>
@@ -204,9 +204,14 @@ export function OnPageView({
                     if (e.key === "Enter") void analyze();
                   }}
                   placeholder="https://example.com/page"
+                  className="min-w-0"
                 />
               </div>
-              <Button onClick={() => void analyze()} disabled={busy || url.trim() === ""}>
+              <Button
+                className="w-full shrink-0 sm:w-auto"
+                onClick={() => void analyze()}
+                disabled={busy || url.trim() === ""}
+              >
                 {busy ? <Loader2 className="animate-spin" /> : <FileSearch />}
                 Analyze
               </Button>
@@ -215,7 +220,7 @@ export function OnPageView({
 
           {result !== null && (
             <>
-              <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)]">
+              <div className="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
                 <ScoreRing score={result.score} />
                 <SerpPreview
                   title={result.title}
@@ -224,20 +229,22 @@ export function OnPageView({
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
                 {result.checks.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-start gap-2 rounded-lg border border-border bg-card p-3"
+                    className="flex min-w-0 items-start gap-2 rounded-lg border border-border bg-card p-3"
                   >
                     {c.pass ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
                     ) : (
                       <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
                     )}
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium">{c.label}</p>
-                      <p className="text-xs text-muted-foreground">{c.detail}</p>
+                      <p className="break-words text-xs text-muted-foreground">
+                        {c.detail}
+                      </p>
                     </div>
                   </div>
                 ))}

@@ -79,6 +79,8 @@ export type OAuthState = {
   nonce: string;
   /** Where to land after a successful sign-in. */
   next?: string;
+  /** "drive" adds Drive scopes onto an existing Google account. */
+  intent?: "login" | "drive";
 };
 
 export function encodeState(state: OAuthState): string {
@@ -97,13 +99,17 @@ export function decodeState(raw: string): OAuthState | null {
   }
 }
 
-export function getAuthUrl(state: string, origin: string): string {
+export function getAuthUrl(
+  state: string,
+  origin: string,
+  extraScopes: string[] = [],
+): string {
   return createOAuth2Client(origin).generateAuthUrl({
     access_type: "offline",
     // Always prompt so Google reliably returns a refresh token, even on re-auth.
     prompt: "consent",
     include_granted_scopes: true,
-    scope: LOGIN_SCOPES,
+    scope: [...LOGIN_SCOPES, ...extraScopes],
     state,
   });
 }

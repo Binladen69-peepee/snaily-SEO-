@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import type { WordpressHealth } from "@/lib/setup/state";
 
 const ACTIVE_COOKIE = "activeProject";
 
@@ -10,6 +11,9 @@ export type ProjectDTO = {
   name: string;
   url: string;
   description: string;
+  /** False until the setup wizard has been completed at least once. */
+  onboarded: boolean;
+  wordpressHealth: WordpressHealth;
 };
 
 /** All projects for the signed-in user, newest first. */
@@ -20,14 +24,26 @@ export async function getProjects(): Promise<ProjectDTO[]> {
   const docs = await prisma.project.findMany({
     where: { userId: session.userId },
     orderBy: { createdAt: "desc" },
+    include: { wordpress: { select: { lastError: true } } },
   });
 
-  return docs.map((d) => ({
-    id: d.id,
-    name: d.name,
-    url: d.url,
-    description: d.description ?? "",
-  }));
+  return docs.map((d) => {
+    let wordpressHealth: WordpressHealth = "not_configured";
+    if (d.wordpress) {
+      wordpressHealth =
+        d.wordpress.lastError !== null && d.wordpress.lastError !== ""
+          ? "connection_lost"
+          : "connected";
+    }
+    return {
+      id: d.id,
+      name: d.name,
+      url: d.url,
+      description: d.description ?? "",
+      onboarded: d.onboardedAt !== null,
+      wordpressHealth,
+    };
+  });
 }
 
 /**

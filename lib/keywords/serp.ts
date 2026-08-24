@@ -29,10 +29,10 @@ export const SERP_METRIC_LABEL: Record<SerpMetricKey, string> = {
 export const SERP_METRIC_TITLE: Record<SerpMetricKey, string> = {
   pageAuthority: "Page Authority — strength of the individual ranking page",
   domainAuthority: "Domain Authority — strength of the whole site",
-  pageLinkingDomains: "Domains linking to the ranking page",
-  domainLinkingDomains: "Domains linking to the whole site",
+  pageLinkingDomains: "Domains linking to the ranking page (from Common Crawl PageRank)",
+  domainLinkingDomains: "Domains linking to the whole site (from Common Crawl PageRank)",
   authority: "Trust signal for the site",
-  backlinks: "Total backlinks pointing at the ranking page",
+  backlinks: "Inbound links to the ranking page (from Common Crawl PageRank)",
 };
 
 export const SERP_METRIC_KEYS: SerpMetricKey[] = [

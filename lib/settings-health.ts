@@ -1,6 +1,6 @@
 import { aiKey, aiModel, aiVendor, aiVendorLabel } from "@/lib/ai";
 import { prisma } from "@/lib/db";
-import { decryptToken } from "@/lib/google/crypto";
+import { decryptToken } from "@/lib/google/token-crypto";
 
 /**
  * Live health of every configured integration.
@@ -233,7 +233,7 @@ async function checkAiKey(now: Date): Promise<HealthCheck> {
     return {
       ...base, level: "failing", facts: [],
       summary: "Not configured",
-      reason: "The Content Assistant and GEO Lab drafting both need this key. Groq keys start gsk_, xAI keys start xai-.",
+      reason: "Drafter and GEO Lab drafting both need this key. Groq keys start gsk_, xAI keys start xai-.",
     };
   }
 

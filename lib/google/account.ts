@@ -1,7 +1,7 @@
 import type { OAuth2Client } from "google-auth-library";
 
 import { prisma } from "@/lib/db";
-import { decryptToken, encryptToken } from "@/lib/google/crypto";
+import { decryptToken, encryptToken } from "@/lib/google/token-crypto";
 import { createOAuth2Client } from "@/lib/google/oauth";
 
 /**
@@ -62,7 +62,7 @@ export async function saveGoogleAccount(
     accessTokenEncrypted: encryptToken(tokens.access_token),
     refreshTokenEncrypted: refresh,
     tokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-    scopes: tokens.scope ?? existing?.scopes ?? "",
+    scopes: grantedScopes(tokens.scope, existing?.scopes),
     lastError: null,
   };
 
@@ -71,6 +71,37 @@ export async function saveGoogleAccount(
     create: { userId, ...data },
     update: data,
   });
+}
+
+/**
+ * The scopes this token actually carries.
+ *
+ * These used to be unioned with whatever was stored before, on the theory that
+ * consent only ever adds. It does not. Signing in again issues a login-scoped
+ * token, and pointing the app at a different OAuth client starts from nothing
+ * — but the union went on claiming Drive from a grant that no longer existed.
+ * `hasDrive` then reported a permission the token did not have, so the editor
+ * skipped its connect redirect, called Drive, and got a 403 the author had no
+ * way to act on.
+ *
+ * Every consent URL asks for LOGIN_SCOPES plus whatever else it needs and sets
+ * `include_granted_scopes`, so the response lists everything the client holds.
+ * Trust it. The stored value is only a fallback for a response that omits
+ * `scope` altogether.
+ */
+function grantedScopes(
+  incoming: string | null | undefined,
+  stored: string | undefined,
+): string {
+  const granted = new Set(
+    (incoming ?? "")
+      .split(/\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s !== ""),
+  );
+
+  if (granted.size > 0) return [...granted].join(" ");
+  return stored ?? "";
 }
 
 /**
@@ -140,6 +171,7 @@ export type GoogleAccountPublic = {
   connected: boolean;
   hasSearchConsole: boolean;
   hasAnalytics: boolean;
+  hasDrive: boolean;
   lastError: string | null;
 };
 
@@ -157,6 +189,9 @@ export async function getGoogleAccountPublic(
     connected: true,
     hasSearchConsole: account.scopes.includes("webmasters"),
     hasAnalytics: account.scopes.includes("analytics"),
+    // Matches drive.file and any wider Drive scope, and nothing that merely
+    // contains the word.
+    hasDrive: account.scopes.includes("auth/drive"),
     lastError: account.lastError,
   };
 }

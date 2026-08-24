@@ -38,8 +38,8 @@ const SEVERITY_COLOR = {
 
 function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex gap-2 text-sm">
-      <span className="w-32 shrink-0 text-muted-foreground">{label}</span>
+    <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:gap-2">
+      <span className="shrink-0 text-muted-foreground sm:w-32">{label}</span>
       <span className="min-w-0 break-all">{value}</span>
     </div>
   );

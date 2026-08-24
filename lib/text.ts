@@ -152,29 +152,56 @@ export function extractEntities(documents: string[], limit = 20): TermCount[] {
     .slice(0, limit);
 }
 
-const QUESTION_START =
-  /^(what|how|why|when|where|who|which|can|do|does|is|are|should|will|would)\b/i;
+const WH_START = /^(what|how|why|when|where|who|which)\b/i;
+const AUX_START = /^(can|do|does|did|is|are|was|were|should|will|would|could|has|have)\b/i;
+
+/**
+ * Whether a sentence is actually asking something.
+ *
+ * The old test was "starts with one of these words", which let imperatives
+ * straight through: "Do not let the soup boil." begins with "do", and once a
+ * question mark had been appended it became a question on a published post's
+ * FAQ schema. A wh-word carries the question by itself; an auxiliary only does
+ * when the sentence is punctuated as one, because "Do not..." and "Is best
+ * served cold" are instructions wearing the same first word.
+ */
+function isInterrogative(sentence: string): boolean {
+  const s = sentence.trim();
+  if (WH_START.test(s)) return s.endsWith("?") || s.split(" ").length <= 12;
+  if (AUX_START.test(s)) return s.endsWith("?");
+  return false;
+}
 
 /** Pulls question-shaped sentences and headings out of text. */
 export function extractQuestions(documents: string[], limit = 15): string[] {
-  const seen = new Map<string, number>();
+  /*
+   * Keyed on the lowercased form so near-duplicates collapse, but the first
+   * spelling seen is what gets returned. Rebuilding the question from the key
+   * meant capitalising only the first letter of a lowercased string, so
+   * "Can I freeze this soup?" came back as "Can i freeze this soup?" - and
+   * these feed the FAQ stage, which will happily write around a typo.
+   */
+  const seen = new Map<string, { text: string; count: number }>();
 
   for (const doc of documents) {
     for (const raw of doc.split(/(?<=[.?!])\s+|\n+/)) {
       const s = raw.trim().replace(/\s+/g, " ");
       if (s.length < 12 || s.length > 120) continue;
-      if (!QUESTION_START.test(s)) continue;
-      if (!s.endsWith("?") && s.split(" ").length > 12) continue;
+      if (!isInterrogative(s)) continue;
 
-      const key = s.replace(/\?+$/, "").toLowerCase();
-      seen.set(key, (seen.get(key) ?? 0) + 1);
+      // Trailing punctuation of any kind comes off, so the "?" added below is
+      // the only one and never lands after a full stop.
+      const text = s.replace(/[.?!\s]+$/, "");
+      const key = text.toLowerCase();
+      const prior = seen.get(key);
+      seen.set(key, { text: prior?.text ?? text, count: (prior?.count ?? 0) + 1 });
     }
   }
 
-  return [...seen.entries()]
-    .sort((a, b) => b[1] - a[1])
+  return [...seen.values()]
+    .sort((a, b) => b.count - a.count)
     .slice(0, limit)
-    .map(([q]) => q.charAt(0).toUpperCase() + q.slice(1) + "?");
+    .map(({ text }) => `${text.charAt(0).toUpperCase()}${text.slice(1)}?`);
 }
 
 /** Word count of plain text, matching how the crawler counts. */

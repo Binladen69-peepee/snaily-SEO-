@@ -42,7 +42,7 @@ async function syncSearchConsole(
   const sc = searchConsole(auth);
   const { start, end } = window(SYNC_LOOKBACK_DAYS);
 
-  const [pages, queries] = await Promise.all([
+  const [pages, queries, countries, countryQueries] = await Promise.all([
     sc.searchanalytics.query({
       siteUrl,
       requestBody: {
@@ -58,6 +58,29 @@ async function syncSearchConsole(
         startDate: start,
         endDate: end,
         dimensions: ["date", "query"],
+        rowLimit: 25_000,
+      },
+    }),
+    sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate: start,
+        endDate: end,
+        dimensions: ["date", "country"],
+        rowLimit: 25_000,
+      },
+    }),
+    /*
+     * Country × query with no date: distinct keywords per country cannot be
+     * summed from daily rows without counting one keyword once per day, and
+     * date × country × query overruns the row limit on any real site.
+     */
+    sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate: start,
+        endDate: end,
+        dimensions: ["country", "query"],
         rowLimit: 25_000,
       },
     }),
@@ -83,10 +106,41 @@ async function syncSearchConsole(
     position: r.position ?? 0,
   }));
 
+  const countryRows = (countries.data.rows ?? []).map((r) => ({
+    projectId,
+    date: toDate(r.keys?.[0] ?? start),
+    country: (r.keys?.[1] ?? "").toLowerCase(),
+    clicks: Math.round(r.clicks ?? 0),
+    impressions: Math.round(r.impressions ?? 0),
+    ctr: r.ctr ?? 0,
+    position: r.position ?? 0,
+  }));
+
+  // One row per country, holding how many distinct queries it returned.
+  const perCountry = new Map<string, number>();
+  for (const r of countryQueries.data.rows ?? []) {
+    const code = (r.keys?.[0] ?? "").toLowerCase();
+    if (code === "") continue;
+    perCountry.set(code, (perCountry.get(code) ?? 0) + 1);
+  }
+  const countryKeywordRows = [...perCountry.entries()].map(
+    ([country, keywords]) => ({
+      projectId,
+      country,
+      keywords,
+      windowDays: SYNC_LOOKBACK_DAYS,
+    }),
+  );
+
   const from = toDate(start);
   await prisma.$transaction([
     prisma.gscPageMetric.deleteMany({ where: { projectId, date: { gte: from } } }),
     prisma.gscQueryMetric.deleteMany({ where: { projectId, date: { gte: from } } }),
+    prisma.gscCountryMetric.deleteMany({
+      where: { projectId, date: { gte: from } },
+    }),
+    // No date grain, so the whole set is replaced rather than a window of it.
+    prisma.gscCountryKeyword.deleteMany({ where: { projectId } }),
   ]);
 
   // Chunked so a single statement never gets unreasonably large.
@@ -102,8 +156,25 @@ async function syncSearchConsole(
       skipDuplicates: true,
     });
   }
+  for (let i = 0; i < countryRows.length; i += 1000) {
+    await prisma.gscCountryMetric.createMany({
+      data: countryRows.slice(i, i + 1000),
+      skipDuplicates: true,
+    });
+  }
+  if (countryKeywordRows.length > 0) {
+    await prisma.gscCountryKeyword.createMany({
+      data: countryKeywordRows,
+      skipDuplicates: true,
+    });
+  }
 
-  return pageRows.length + queryRows.length;
+  return (
+    pageRows.length +
+    queryRows.length +
+    countryRows.length +
+    countryKeywordRows.length
+  );
 }
 
 async function syncAnalytics(

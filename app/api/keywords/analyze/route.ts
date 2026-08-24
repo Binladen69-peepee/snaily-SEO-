@@ -10,6 +10,13 @@ import {
 import { getKeywordProvider } from "@/lib/keywords/provider";
 import { ProviderError } from "@/lib/keywords/types";
 
+/*
+ * A bulk run is one live SERP lookup per keyword. The default slice is far
+ * too short for that, and overrunning it returns an HTML gateway page rather
+ * than JSON — which is what left the Analyze button spinning forever.
+ */
+export const maxDuration = 60;
+
 const schema = z.object({
   keywords: z.string().min(1, "Enter at least one keyword").max(50_000),
   country: z.string().length(2).default("us"),

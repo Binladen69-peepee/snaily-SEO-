@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Globe, Plus, Settings } from "lucide-react";
+import { ExternalLink, Globe, Plug, Plus, Settings } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -82,12 +82,24 @@ export function ProjectsList({ projects }: { projects: ProjectDTO[] }) {
                   )}
                 </div>
 
-                <Button variant="outline" size="sm" asChild className="shrink-0 self-start sm:self-center">
-                  <Link href={`/projects/${p.id}`}>
-                    <Settings />
-                    Settings
-                  </Link>
-                </Button>
+                <div className="flex shrink-0 gap-2 self-start sm:self-center">
+                  {(!p.onboarded || p.wordpressHealth !== "connected") && (
+                    <Button size="sm" asChild>
+                      <Link href={`/projects/${p.id}/setup`}>
+                        <Plug />
+                        {p.wordpressHealth === "connection_lost"
+                          ? "Reconnect"
+                          : "Finish setup"}
+                      </Link>
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/projects/${p.id}`}>
+                      <Settings />
+                      Settings
+                    </Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

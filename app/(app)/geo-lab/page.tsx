@@ -19,10 +19,10 @@ export default async function GeoLabPage() {
 
   if (!session || !project) {
     return (
-      <div className="mx-auto max-w-4xl space-y-5">
+      <div className="mx-auto w-full max-w-4xl space-y-5">
         <PageHeader
           title="GEO Lab"
-          description="Supporting articles that answer a real moment — the kind of specific content AI assistants actually cite."
+          description="AI Search Visibility Command Center — supporting articles that answer a real moment."
         />
         <ToolPrompt icon={Sparkles} title="Create a project first">
           GEO Lab works against one site at a time.{" "}
@@ -35,12 +35,16 @@ export default async function GeoLabPage() {
     );
   }
 
-  const [row, ideas] = await Promise.all([
+  const [row, ideas, gscRow] = await Promise.all([
     prisma.businessFacts.findUnique({ where: { projectId: project.id } }),
     prisma.geoIdea.findMany({
       where: { projectId: project.id, userId: session.userId },
       orderBy: { createdAt: "desc" },
-      take: 30,
+      take: 60,
+    }),
+    prisma.project.findUnique({
+      where: { id: project.id },
+      select: { gscSiteUrl: true },
     }),
   ]);
 
@@ -48,9 +52,14 @@ export default async function GeoLabPage() {
     ? parseAnchorPages(row.anchorPages)
     : DEFAULT_ANCHOR_PAGES;
 
+  const gscConnected =
+    typeof gscRow?.gscSiteUrl === "string" && gscRow.gscSiteUrl.trim() !== "";
+
   return (
     <GeoLabView
       projectId={project.id}
+      projectName={project.name}
+      gscConnected={gscConnected}
       anchorPages={anchorPages}
       initialFacts={{
         serviceArea: row?.serviceArea ?? "",

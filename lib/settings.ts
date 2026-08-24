@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { decryptToken, encryptToken } from "@/lib/google/crypto";
+import { decryptToken, encryptToken } from "@/lib/google/token-crypto";
 
 /**
  * Owner-managed configuration.
@@ -16,6 +16,8 @@ import { decryptToken, encryptToken } from "@/lib/google/crypto";
 
 export type SettingKey =
   | "SERPAPI_KEY"
+  | "OPENPAGERANK_API_KEY"
+  | "CRAWLGRAPH_API_KEY"
   | "GROK_API_KEY"
   | "GROK_MODEL"
   | "GOOGLE_CLIENT_ID"
@@ -38,6 +40,22 @@ export const SETTINGS: SettingSpec[] = [
       "Powers live Google results, rank checks and competitor citations. Free tier is 250 searches a month.",
     secret: true,
     placeholder: "Paste a new key to replace the current one",
+  },
+  {
+    key: "OPENPAGERANK_API_KEY",
+    label: "OpenPageRank key",
+    description:
+      "Free link-graph rank from the Common Crawl web graph — the main input to Snaily Domain Authority. Free tier covers 30,000 domains a month.",
+    secret: true,
+    placeholder: "Paste the key from domcop.com/openpagerank",
+  },
+  {
+    key: "CRAWLGRAPH_API_KEY",
+    label: "CrawlGraph key",
+    description:
+      "Referring-domain counts from the Common Crawl webgraph — the only free source of real inbound-link data. Free tier is 15 lookups a month, so results are cached for 30 days and never fetched automatically.",
+    secret: true,
+    placeholder: "cg_live_… from crawlgraph.com",
   },
   {
     key: "GROK_API_KEY",
@@ -80,6 +98,7 @@ export const SETTINGS: SettingSpec[] = [
  * `process.env` once at boot and refreshed whenever the owner saves. Reads stay
  * synchronous everywhere and no call site had to change.
  */
+
 let loaded = false;
 
 export async function loadSettings(): Promise<void> {

@@ -30,7 +30,7 @@ export type Metric = {
 };
 
 export const UNAVAILABLE_NOTE =
-  "Not provided by the current data source. Link metrics need a backlink index (Moz, Majestic or DataForSEO).";
+  "Not enough of a rank signal yet for this domain. Scores come from Tranco/OpenPageRank, SERP presence and domain age — never from a paid backlink index.";
 
 export function unavailable(): Metric {
   return { value: null, source: "unavailable", note: UNAVAILABLE_NOTE };

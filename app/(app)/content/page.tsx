@@ -18,22 +18,22 @@ export default async function ContentIntelligencePage() {
     session && project ? await buildReport(session.userId, project.id) : null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+    <div className="mx-auto w-full max-w-6xl space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
             Content Intelligence
           </h1>
           <p className="text-sm text-muted-foreground">
             {report
-              ? `Audit from ${new Date(report.auditDate).toLocaleString()} · ${String(report.summary.totalPages)} pages crawled`
+              ? `Audit from ${new Date(report.auditDate).toLocaleString()} · ${String(report.summary.totalPages)} pages`
               : "Prioritised fixes drawn from your latest site audit."}
           </p>
         </div>
 
         {report && (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
-            <div className="text-right">
+          <div className="flex w-full shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2 sm:w-auto sm:justify-end">
+            <div>
               <p className="text-[11px] text-muted-foreground">Site health</p>
               <p
                 className={`tabular text-2xl font-semibold ${
@@ -45,20 +45,8 @@ export default async function ContentIntelligencePage() {
                 }`}
               >
                 {report.healthScore}
+                <span className="text-sm font-normal text-muted-foreground">/100</span>
               </p>
-            </div>
-            <div className="h-10 w-10 overflow-hidden rounded-full border-4 border-muted flex items-center justify-center">
-              <div
-                className={`text-xs font-bold ${
-                  report.healthScore >= 80
-                    ? "text-success"
-                    : report.healthScore >= 50
-                      ? "text-warning"
-                      : "text-destructive"
-                }`}
-              >
-                /100
-              </div>
             </div>
           </div>
         )}

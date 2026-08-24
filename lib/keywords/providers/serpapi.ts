@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/db";
 import { difficultyFromSerpComposition } from "@/lib/keywords/authority";
 import { estimateKeyword } from "@/lib/keywords/estimate";
+import { getDomainAuthority, scoreDomain } from "@/lib/metrics/authority";
+import { getCachedLinkCounts } from "@/lib/metrics/link-data";
+import { scoreLinkCounts } from "@/lib/metrics/link-counts";
+import { scorePage } from "@/lib/metrics/page-authority";
+import { wellKnownPageRank } from "@/lib/metrics/sources";
+import { ctrForPosition } from "@/lib/keywords/ctr";
 import {
   matchesTerms,
   ProviderError,
@@ -20,17 +26,48 @@ import {
  * What is genuinely live here: the ranking URLs, titles, snippets, favicons,
  * positions, total result count, related searches and autocomplete.
  *
- * What is NOT live: search volume and CPC — estimated, and badged as such.
+ * What is estimated: search volume and CPC — badged as such.
  *
- * What is simply unavailable: PA, DA, referring domains and backlink counts.
- * Those come from a crawled backlink index that this deployment does not have,
- * so they are reported as null and rendered as "N/A". They are never invented.
+ * Link counts (Doms, DomsD, Links) are derived from the same Common Crawl
+ * graph that feeds OpenPageRank — see `lib/metrics/link-counts.ts`.
  */
 
 const ENDPOINT = "https://serpapi.com/search.json";
 
 /** Cached responses are reused for a week — SERPs barely move day to day. */
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a Google SERP for this query is already cached and still fresh.
+ *
+ * Lets a caller tell "this costs nothing" from "this costs one of the 250
+ * searches a month" *before* committing to the lookup. Deep Dive uses it to
+ * fill Est. Links, DA and Ranking Pages for free on every row we have already
+ * paid for, and to leave the rest for an explicit click.
+ */
+export async function hasFreshSerp(
+  query: string,
+  country: string,
+): Promise<boolean> {
+  const cached = await prisma.serpCache.findUnique({
+    where: {
+      engine_query_country: {
+        engine: "google",
+        query: query.toLowerCase(),
+        country,
+      },
+    },
+    select: { fetchedAt: true },
+  });
+  return (
+    cached !== null && Date.now() - cached.fetchedAt.getTime() < CACHE_TTL_MS
+  );
+}
+
+type RichExtension = {
+  rating?: number;
+  reviews?: number;
+};
 
 type OrganicResult = {
   position?: number;
@@ -40,12 +77,27 @@ type OrganicResult = {
   snippet?: string;
   favicon?: string;
   source?: string;
+  /** Freshness string Google renders, e.g. "4 days ago". */
+  date?: string;
+  /** Present only for results Google treats as definitive for the query. */
+  sitelinks?: { inline?: unknown[]; expanded?: unknown[]; list?: unknown[] };
+  rich_snippet?: {
+    top?: { detected_extensions?: RichExtension };
+    bottom?: { detected_extensions?: RichExtension };
+  };
 };
 
 type SerpApiResponse = {
   error?: string;
   search_information?: { total_results?: number };
   organic_results?: OrganicResult[];
+  /** Paid results. Their presence is real evidence of commercial intent. */
+  ads?: unknown[];
+  shopping_results?: unknown[];
+  /** Google's AI Overview, when it rendered one for this query. */
+  ai_overview?: unknown;
+  knowledge_graph?: unknown;
+  local_results?: unknown;
   related_searches?: { query?: string }[];
   related_questions?: { question?: string }[];
   suggestions?: { value?: string }[];
@@ -189,6 +241,79 @@ export class SerpApiProvider implements KeywordProvider {
     );
   }
 
+  /**
+   * Attaches Snaily authority to a page of results.
+   *
+   * Separate from `toSerpResults` because it is the only part that touches the
+   * network and the database — the mapping above stays pure and synchronous.
+   */
+  private async withAuthority(results: SerpResult[]): Promise<SerpResult[]> {
+    if (results.length === 0) return results;
+
+    const domains = results.map((r) => r.domain);
+    const [authority, cachedLinks] = await Promise.all([
+      getDomainAuthority(domains).catch(() => new Map()),
+      getCachedLinkCounts(domains).catch(() => new Map()),
+    ]);
+
+    return results.map((r) => {
+      const host = r.domain.replace(/^www\./, "").toLowerCase();
+      let domain = authority.get(host);
+
+      // A domain that is on this SERP always has at least that one observed
+      // ranking as a signal. Without this, a missing OpenPageRank key left
+      // every PA/DA/Doms cell as N/A even though Google ranked the page.
+      if (domain == null || domain.score.value === null) {
+        domain = scoreDomain(
+          host,
+          {
+            openPageRank: domain?.openPageRank ?? wellKnownPageRank(host),
+            domainAgeYears: null,
+            visibility: {
+              appearances: 1,
+              weightedShare: ctrForPosition(r.position),
+              averagePosition: r.position,
+              queries: 1,
+              sitelinkHits: r.sitelinks > 0 ? 1 : 0,
+            },
+          },
+          1,
+        );
+      }
+
+      const page = scorePage({
+        url: r.url,
+        domain,
+        serpPosition: r.position,
+      });
+      const links = scoreLinkCounts({
+        openPageRank: domain.openPageRank,
+        domainAuthority: domain.score.value,
+        /*
+         * Prefer the count the webgraph just returned over the cache: within
+         * this same request the cache row has only just been written, so
+         * reading it back would miss on a first-ever lookup and silently
+         * downgrade a measured figure to a modelled one.
+         */
+        measuredReferringDomains:
+          domain.referringDomains ?? cachedLinks.get(host) ?? null,
+        url: r.url,
+        pageAuthority: page.value,
+        position: r.position,
+      });
+
+      return {
+        ...r,
+        domainAuthority: domain.score.value,
+        pageAuthority: page.value,
+        authority: domain.trust.value,
+        pageLinkingDomains: links?.pageLinkingDomains ?? null,
+        domainLinkingDomains: links?.domainLinkingDomains ?? null,
+        backlinks: links?.backlinks ?? null,
+      };
+    });
+  }
+
   private toSerpResults(
     data: SerpApiResponse,
     keyword: string,
@@ -209,6 +334,15 @@ export class SerpApiProvider implements KeywordProvider {
         path = url.toLowerCase();
       }
 
+      const rich =
+        r.rich_snippet?.top?.detected_extensions ??
+        r.rich_snippet?.bottom?.detected_extensions;
+
+      const sitelinks =
+        (r.sitelinks?.inline?.length ?? 0) +
+        (r.sitelinks?.expanded?.length ?? 0) +
+        (r.sitelinks?.list?.length ?? 0);
+
       return {
         position,
         title: r.title ?? url,
@@ -216,10 +350,18 @@ export class SerpApiProvider implements KeywordProvider {
         domain,
         description: r.snippet ?? "",
         favicon: r.favicon ?? faviconFor(domain),
+        publishedDate: r.date ?? null,
+        sitelinks,
+        rating: typeof rich?.rating === "number" ? rich.rating : null,
+        reviews: typeof rich?.reviews === "number" ? rich.reviews : null,
+        sourceName: r.source ?? domain,
+        displayedLink: r.displayed_link ?? "",
         keywordInUrl: words.length > 0 && words.every((w) => path.includes(w)),
         wordCount: 0,
-        // A SERP response carries no link data. Reporting null keeps the UI
-        // honest instead of inventing a number that looks authoritative.
+        /*
+         * Authority and link counts are filled in by `withAuthority` from the
+         * Common Crawl graph (OpenPageRank) plus any cached webgraph lookup.
+         */
         pageAuthority: null,
         domainAuthority: null,
         pageLinkingDomains: null,
@@ -237,7 +379,7 @@ export class SerpApiProvider implements KeywordProvider {
   ): Promise<KeywordDetail> {
     void language;
     const data = await this.fetchCached("google", keyword, country);
-    const serp = this.toSerpResults(data, keyword);
+    const serp = await this.withAuthority(this.toSerpResults(data, keyword));
 
     const base = estimateKeyword(
       keyword,

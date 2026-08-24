@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { SetupIndicator } from "@/components/setup/setup-indicator";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -63,8 +64,9 @@ export function Header({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="hidden min-w-0 sm:block">
+    <div className="nav-type flex min-w-0 items-center gap-1.5">
+      <SetupIndicator />
+      <div className="hidden min-w-0 md:block">
         <ProjectSwitcher projects={projects} activeId={activeProjectId} />
       </div>
 
@@ -98,7 +100,7 @@ export function Header({
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent align="end" className="nav-type w-56">
           <DropdownMenuLabel>
             <div className="truncate">{name}</div>
             <div className="truncate text-xs font-normal text-muted-foreground">

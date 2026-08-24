@@ -12,3 +12,4 @@ node_modules
 # Docs are not needed at runtime
 DEVELOPMENT_RULES.md
 PROJECT_STATUS.md
+CLIENT-MESSAGE.md

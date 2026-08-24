@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { SetupProgressCard } from "@/components/setup/setup-progress-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,7 +99,7 @@ export function DashboardOverview({
       : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
           Welcome, {firstName}
@@ -211,6 +212,8 @@ export function DashboardOverview({
         </Card>
       </div>
 
+      <SetupProgressCard />
+
       {setupDone < setupTotal && (
         <Card>
           <CardHeader className="pb-2">
@@ -286,7 +289,7 @@ export function DashboardOverview({
 
 export function DashboardEmpty({ firstName }: { firstName: string }) {
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
           Welcome, {firstName}

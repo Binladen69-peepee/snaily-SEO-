@@ -122,7 +122,7 @@ export function ToolbarActions({
         )}
       </button>
 
-      <Link href="/keywords/bulk" className={BUTTON}>
+      <Link href="/bulk-check" className={BUTTON}>
         <CheckSquare className="size-3.5" aria-hidden />
         Bulk Check
       </Link>

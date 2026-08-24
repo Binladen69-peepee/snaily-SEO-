@@ -136,6 +136,72 @@ function SpotlightCard({
   );
 }
 
+function PageMobileCard({
+  page,
+  open,
+  hasPerformance,
+  onToggle,
+}: {
+  page: PageIntel;
+  open: boolean;
+  hasPerformance: boolean;
+  onToggle: () => void;
+}) {
+  const band = priorityBand(page.priority.score);
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-start gap-3 p-3 text-left"
+        aria-expanded={open}
+      >
+        <div className="mt-0.5 shrink-0 text-muted-foreground">
+          {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate font-medium">{page.path}</span>
+            <Badge variant={band.variant} className="shrink-0">
+              {band.label}
+            </Badge>
+            {page.isNew && (
+              <Badge variant="outline" className="shrink-0 text-[10px]">
+                New
+              </Badge>
+            )}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {page.title || "No title tag"}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+            <span>
+              Priority{" "}
+              <strong className="tabular">{page.priority.score}</strong>
+            </span>
+            <span>
+              Health <HealthBar score={page.health} />
+            </span>
+            {page.issues.length === 0 ? (
+              <Badge variant="success">Clean</Badge>
+            ) : (
+              <span>{page.issues.length} issues</span>
+            )}
+            {hasPerformance && page.performance && (
+              <span>{formatNumber(page.performance.clicks)} clicks</span>
+            )}
+          </div>
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-border bg-muted/20 px-3 py-4 sm:px-4">
+          <PageDetail page={page} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function IntelligenceView({ report }: { report: IntelReport }) {
   const [q, setQ] = useState("");
   const [priority, setPriority] = useState("");
@@ -254,20 +320,20 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
   return (
     <div className="space-y-6">
       {/* ---------- Explain the scores (one-liner legend) ---------- */}
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:gap-3">
         <span className="flex items-center gap-1.5">
-          <Zap className="size-3.5 text-destructive" />
-          <strong className="text-foreground">Priority</strong> — how urgently Google needs this fixed
+          <Zap className="size-3.5 shrink-0 text-destructive" />
+          <strong className="text-foreground">Priority</strong> — fix urgency
         </span>
-        <span className="text-border">·</span>
+        <span className="hidden text-border sm:inline">·</span>
         <span className="flex items-center gap-1.5">
-          <Sparkles className="size-3.5 text-success" />
-          <strong className="text-foreground">Opportunity</strong> — biggest SEO gain per unit of effort
+          <Sparkles className="size-3.5 shrink-0 text-success" />
+          <strong className="text-foreground">Opportunity</strong> — gain per effort
         </span>
-        <span className="text-border">·</span>
+        <span className="hidden text-border sm:inline">·</span>
         <span className="flex items-center gap-1.5">
-          <TrendingUp className="size-3.5 text-primary" />
-          <strong className="text-foreground">Health</strong> — issue-free score for this page (100 = clean)
+          <TrendingUp className="size-3.5 shrink-0 text-primary" />
+          <strong className="text-foreground">Health</strong> — 100 = clean page
         </span>
       </div>
 
@@ -376,13 +442,13 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
       {report.comparison ? (
         <ChangesPanel comparison={report.comparison} />
       ) : (
-        <div className="flex items-start gap-3 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-          <RefreshCw className="mt-0.5 size-4 shrink-0" />
-          <span>
+        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground sm:flex-row sm:items-start">
+          <RefreshCw className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">
             This is your first completed audit. Run another crawl to start tracking
             what improves or regresses between scans.
           </span>
-          <Button variant="outline" size="sm" asChild className="ml-auto shrink-0">
+          <Button variant="outline" size="sm" asChild className="w-full shrink-0 sm:w-auto">
             <Link href="/audit">Crawl now</Link>
           </Button>
         </div>
@@ -390,13 +456,13 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
 
       {/* ---------- GSC nudge when no performance data ---------- */}
       {!summary.hasPerformance && (
-        <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
-          <TrendingUp className="mt-0.5 size-4 shrink-0 text-primary" />
-          <span>
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm sm:flex-row sm:items-start">
+          <TrendingUp className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1">
             <strong>Connect Google Search Console</strong> to see real clicks and
             impressions per page, and to make Priority scores more accurate.
           </span>
-          <Button variant="outline" size="sm" asChild className="ml-auto shrink-0">
+          <Button variant="outline" size="sm" asChild className="w-full shrink-0 sm:w-auto">
             <Link href="/integrations">Connect</Link>
           </Button>
         </div>
@@ -491,8 +557,24 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-sm">
+          {/* Mobile / small tablet: card list */}
+          <div className="space-y-2 md:hidden">
+            {visible.map((p) => (
+              <PageMobileCard
+                key={p.url}
+                page={p}
+                open={expanded === p.url}
+                hasPerformance={report.summary.hasPerformance}
+                onToggle={() => {
+                  setExpanded(expanded === p.url ? null : p.url);
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Tablet / desktop: table */}
+          <div className="scroll-x hidden rounded-xl border border-border md:block">
+            <table className="w-full min-w-[36rem] text-sm">
               <caption className="sr-only">
                 Audited pages ranked by priority, with health and opportunity scores
               </caption>
@@ -503,11 +585,11 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                     [
                       { k: "path", l: "Page", a: "left" },
                       { k: "priority", l: "Priority", a: "right" },
-                      { k: "opportunity", l: "Opportunity", a: "right" },
+                      { k: "opportunity", l: "Opportunity", a: "right", hide: "lg" },
                       { k: "health", l: "Health", a: "right" },
                       { k: "issues", l: "Issues", a: "right" },
                       ...(report.summary.hasPerformance
-                        ? ([{ k: "clicks", l: "Clicks (28d)", a: "right" }] as const)
+                        ? ([{ k: "clicks", l: "Clicks (28d)", a: "right", hide: "xl" }] as const)
                         : []),
                     ] as const
                   ).map((c) => (
@@ -521,7 +603,12 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                             : "descending"
                           : "none"
                       }
-                      className={`px-3 py-2.5 font-medium ${c.a === "right" ? "text-right" : "text-left"}`}
+                      className={cn(
+                        "px-3 py-2.5 font-medium",
+                        c.a === "right" ? "text-right" : "text-left",
+                        "hide" in c && c.hide === "lg" && "hidden lg:table-cell",
+                        "hide" in c && c.hide === "xl" && "hidden xl:table-cell",
+                      )}
                     >
                       <button
                         type="button"
@@ -573,7 +660,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                               </span>
                             )}
                           </div>
-                          <div className="bg-muted/20 px-6 py-5">
+                          <div className="bg-muted/20 px-3 py-4 sm:px-6 sm:py-5">
                             <PageDetail page={p} />
                           </div>
                         </td>
@@ -633,7 +720,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                         </div>
                       </td>
 
-                      <td className="tabular px-3 py-2.5 text-right font-medium">
+                      <td className="tabular hidden px-3 py-2.5 text-right font-medium lg:table-cell">
                         {p.opportunity.score > 0 ? (
                           <span className="text-success">{p.opportunity.score}</span>
                         ) : (
@@ -660,7 +747,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                       </td>
 
                       {report.summary.hasPerformance && (
-                        <td className="tabular px-3 py-2.5 text-right">
+                        <td className="tabular hidden px-3 py-2.5 text-right xl:table-cell">
                           {p.performance ? (
                             <span
                               title={`${String(p.performance.impressions)} impressions · pos. ${String(p.performance.position)}`}
@@ -689,7 +776,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                 ` · page ${String(current)} of ${String(totalPages)}`}
             </p>
 
-            <div className="flex gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               {totalPages > 1 && (
                 <>
                   <Button

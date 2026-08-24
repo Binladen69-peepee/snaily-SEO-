@@ -97,12 +97,12 @@ function systemPrompt(f: BusinessFactsInput): string {
     categoryRubric(),
     "",
     "Hard rules:",
-    "- Titles are real questions or situations a person would type, never keyword phrases.",
-    "- Never produce two ideas that differ only by a place name. No city-swap templating, ever.",
-    "- Spread ideas across all four moments and across at least four different categories.",
-    "- Build each idea around a concrete attribute (guest count band, event type, dietary mix, region, lead time).",
-    "- Use ONLY the business facts supplied. Never invent a price, a service area, a policy, a statistic or an availability promise.",
-    "- Never make a health claim.",
+    "Titles are real questions or situations a person would type, never keyword phrases.",
+    "Never produce two ideas that differ only by a place name. No city-swap templating, ever.",
+    "Spread ideas across all four moments and across at least four different categories.",
+    "Build each idea around a concrete attribute (guest count band, event type, dietary mix, region, lead time).",
+    "Use ONLY the business facts supplied. Never invent a price, a service area, a policy, a statistic or an availability promise.",
+    "Never make a health claim.",
     f.neverClaim.length > 0
       ? `- The business has explicitly forbidden these claims: ${f.neverClaim.join("; ")}`
       : "",

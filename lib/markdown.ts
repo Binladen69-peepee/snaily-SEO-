@@ -24,10 +24,20 @@ function inline(text: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
     .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<img src="$2" alt="$1">')
-    // Only http(s) links survive; anything else (javascript:, data:) is left
-    // as plain text rather than becoming an anchor.
+    /*
+     * Absolute http(s) links, and root-relative paths like /vegan-ginger-cake/.
+     *
+     * Relative paths used to be excluded here while the section playbook was
+     * telling the model to write exactly that form, so every internal link the
+     * Drafter produced survived into the published article as visible Markdown:
+     * "[Vegan Ginger Cake](/vegan-ginger-cake/)".
+     *
+     * `\/(?!\/)` allows "/path" but not "//evil.com" — a protocol-relative URL
+     * would leave the site. Everything else (javascript:, data:, vbscript:)
+     * still falls through to plain text rather than becoming an anchor.
+     */
     .replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)[^)]*\)/g,
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/(?!\/)[^)\s]*)[^)]*\)/g,
       '<a href="$2">$1</a>',
     );
 }
@@ -40,6 +50,14 @@ export function markdownToHtml(markdown: string): string {
 
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
+  /*
+   * Consecutive prose lines belong to one paragraph, as they do in Markdown
+   * itself. Emitting a <p> per line looked right while models returned one
+   * long line per paragraph, and shredded a paragraph into fragments the
+   * moment one wrapped at 80 columns — which then reached WordPress as four
+   * one-line paragraphs in a row.
+   */
+  let para: string[] = [];
 
   const closeList = () => {
     if (list !== null) {
@@ -48,11 +66,22 @@ export function markdownToHtml(markdown: string): string {
     }
   };
 
+  const closePara = () => {
+    if (para.length === 0) return;
+    out.push(`<p>${inline(para.join(" "))}</p>`);
+    para = [];
+  };
+
+  const closeBlock = () => {
+    closePara();
+    closeList();
+  };
+
   for (const raw of lines) {
     const line = raw.trimEnd();
 
     if (line.trim() === "") {
-      closeList();
+      closeBlock();
       continue;
     }
 
@@ -68,7 +97,7 @@ export function markdownToHtml(markdown: string): string {
       line.trim(),
     );
     if (loneImage) {
-      closeList();
+      closeBlock();
       out.push(
         `<img src="${escapeHtml(loneImage[2]!)}" alt="${escapeHtml(loneImage[1]!)}">`,
       );
@@ -77,7 +106,7 @@ export function markdownToHtml(markdown: string): string {
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
-      closeList();
+      closeBlock();
       // H1 belongs to the article title field, so a generated "#" becomes H2
       // rather than competing with it.
       const level = Math.max(2, heading[1]!.length);
@@ -87,6 +116,7 @@ export function markdownToHtml(markdown: string): string {
 
     const bullet = /^[-*+]\s+(.*)$/.exec(line);
     if (bullet) {
+      closePara();
       if (list !== "ul") {
         closeList();
         out.push("<ul>");
@@ -98,6 +128,7 @@ export function markdownToHtml(markdown: string): string {
 
     const ordered = /^\d+[.)]\s+(.*)$/.exec(line);
     if (ordered) {
+      closePara();
       if (list !== "ol") {
         closeList();
         out.push("<ol>");
@@ -109,16 +140,16 @@ export function markdownToHtml(markdown: string): string {
 
     const quote = /^>\s?(.*)$/.exec(line);
     if (quote) {
-      closeList();
+      closeBlock();
       out.push(`<blockquote><p>${inline(quote[1]!)}</p></blockquote>`);
       continue;
     }
 
     closeList();
-    out.push(`<p>${inline(line)}</p>`);
+    para.push(line.trim());
   }
 
-  closeList();
+  closeBlock();
   return out.join("");
 }
 
