@@ -314,6 +314,34 @@ try {
   check(stroganoffScore.recipeAccuracy < 100, "recipe accuracy drops on leaked ingredients");
   check(stroganoffScore.grounding < 100, "grounding drops on unsupported ingredients");
 
+  const makeover = checkStyle({
+    html: p(
+      "A creamy classic gets a plant-based makeover and a velvet drape of sauce.",
+    ),
+    recipeIngredients: stroganoffIngredients,
+    recipeText: stroganoffText,
+  });
+  check(
+    makeover.some((i) => i.rule === "generic metaphor" && /makeover/i.test(i.detail)),
+    "catches a generic makeover intro",
+  );
+  check(
+    checkStyle({
+      html: p("This stroganoff is cozy."),
+      recipeIngredients: stroganoffIngredients,
+      recipeText: stroganoffText,
+    }).some((i) => i.rule === "generic metaphor" && /cozy/i.test(i.detail)),
+    "cozy is a hard-fail generic metaphor on its own",
+  );
+  check(
+    checkStyle({
+      html: p("The sauce is silky."),
+      recipeIngredients: stroganoffIngredients,
+      recipeText: stroganoffText,
+    }).some((i) => i.rule === "generic metaphor" && /silky/i.test(i.detail)),
+    "silky is a hard-fail generic metaphor on its own",
+  );
+
   /* ------------------------------------------------------------------ */
   console.log("\nPipeline markers");
 

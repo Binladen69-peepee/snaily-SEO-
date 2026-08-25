@@ -43,6 +43,23 @@ export type RecipeCard = {
   /** Per serving. 0 / empty = omitted. */
   calories: number;
   suitableForDiet: string[];
+
+  /*
+   * The remaining fields on the client's recipe-card template. Every one is
+   * author-supplied: none is inferred from the prose, because a card that
+   * guesses a cook time is worse than a card that leaves it blank.
+   */
+  /** Free text, e.g. "$12". Empty = not stated. */
+  estimatedCost: string;
+  /** A named extra time, e.g. "Chilling". Minutes in `customMinutes`. */
+  customTimeLabel: string;
+  customMinutes: number;
+  /** Kit the cook needs, one per line. */
+  equipment: string[];
+  /** Card tips, distinct from the article's Top Tips section. */
+  tips: string[];
+  /** The card's opening sentence, shown above the ingredients. */
+  openingSentence: string;
 };
 
 export const EMPTY_RECIPE: RecipeCard = {
@@ -60,6 +77,12 @@ export const EMPTY_RECIPE: RecipeCard = {
   steps: [],
   calories: 0,
   suitableForDiet: [],
+  estimatedCost: "",
+  customTimeLabel: "",
+  customMinutes: 0,
+  equipment: [],
+  tips: [],
+  openingSentence: "",
 };
 
 /** schema.org diet URLs Google recognises. */
@@ -106,6 +129,12 @@ export function parseRecipe(value: unknown): RecipeCard {
       : [],
     calories: num(v.calories),
     suitableForDiet: strList(v.suitableForDiet),
+    estimatedCost: str(v.estimatedCost),
+    customTimeLabel: str(v.customTimeLabel),
+    customMinutes: num(v.customMinutes),
+    equipment: strList(v.equipment),
+    tips: strList(v.tips),
+    openingSentence: str(v.openingSentence),
   };
 }
 

@@ -490,15 +490,41 @@ function recipeReport(raw: unknown): WpRecipeReport {
   };
 }
 
+/** Yoast fields as the site stored them, not as we sent them. */
+export type WpSeoReport = {
+  title: string;
+  description: string;
+  focusKeyword: string;
+  noindex: boolean | null;
+  nofollow: boolean | null;
+  primaryCategory: string;
+};
+
+function seoReport(raw: unknown): WpSeoReport | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const flag = (v: unknown): boolean | null =>
+    v === true ? true : v === false ? false : null;
+  return {
+    title: str(r.title),
+    description: str(r.description),
+    focusKeyword: str(r.focus_keyword),
+    noindex: flag(r.noindex),
+    nofollow: flag(r.nofollow),
+    primaryCategory: str(r.primary_category),
+  };
+}
+
 export async function createDraft(
   siteUrl: string,
   token: string,
   draft: WpDraftPayload,
-): Promise<{ id: number; editLink: string; recipe: WpRecipeReport }> {
+): Promise<{ id: number; editLink: string; recipe: WpRecipeReport; seo: WpSeoReport | null }> {
   const raw = await call<{
     id?: unknown;
     edit_link?: unknown;
     recipe?: unknown;
+    seo?: unknown;
   }>(siteUrl, token, "/draft", {
     method: "POST",
     body: draftBody(draft),
@@ -508,6 +534,7 @@ export async function createDraft(
     id: num(raw.id),
     editLink: str(raw.edit_link),
     recipe: recipeReport(raw.recipe),
+    seo: seoReport(raw.seo),
   };
 }
 
@@ -519,11 +546,12 @@ export async function updateDraft(
   token: string,
   postId: number,
   draft: WpDraftPayload,
-): Promise<{ id: number; editLink: string; recipe: WpRecipeReport }> {
+): Promise<{ id: number; editLink: string; recipe: WpRecipeReport; seo: WpSeoReport | null }> {
   const raw = await call<{
     id?: unknown;
     edit_link?: unknown;
     recipe?: unknown;
+    seo?: unknown;
   }>(siteUrl, token, `/draft/${String(postId)}`, {
     method: "POST",
     missing: "route",
@@ -534,6 +562,7 @@ export async function updateDraft(
     id: num(raw.id) || postId,
     editLink: str(raw.edit_link),
     recipe: recipeReport(raw.recipe),
+    seo: seoReport(raw.seo),
   };
 }
 

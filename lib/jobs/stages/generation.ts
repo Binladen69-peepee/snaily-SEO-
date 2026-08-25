@@ -10,7 +10,7 @@
  * every one of them.
  */
 
-import { parseBrief, prepareArticle } from "@/lib/articles";
+import { briefResearch, parseBrief, prepareArticle } from "@/lib/articles";
 import { recentPostLength } from "@/lib/drafter/corpus";
 import { clip } from "@/lib/ai-policy";
 import { selectSpecialtyIngredients } from "@/lib/drafter/specialty";
@@ -20,6 +20,11 @@ import {
   factBuckets,
   styleContext,
 } from "@/lib/drafter/context-buckets";
+import {
+  filterPaaForRecipe,
+  providerDisplayName,
+  researchSliceForSections,
+} from "@/lib/drafter/research";
 import {
   formatIngredients,
   formatSteps,
@@ -129,19 +134,32 @@ export async function research(ctx: StageContext): Promise<StageResult> {
     if (brief === null) {
       provenance.push({
         label: "SERP",
-        source: "SerpApi",
+        source: "DataForSEO (primary) / SerpApi (fallback)",
         status: "unavailable",
         detail: refreshed?.briefError ?? "No SERP data could be collected.",
       });
     }
   }
 
-  if (brief !== null) {
+  /*
+   * Reuse the brief's DrafterResearch — zero additional provider calls when
+   * prepareArticle already ran (editor open or prior job).
+   */
+  const drafter = briefResearch(brief, article.keyword, article.country);
+
+  if (brief !== null && drafter.available) {
     provenance.push({
       label: "SERP",
-      source: "SerpApi",
+      source: providerDisplayName(drafter.provider),
       status: "real",
-      detail: `${String(brief.serp.length)} ranking pages analysed on ${brief.builtAt.slice(0, 10)}`,
+      detail: `${String(drafter.topResults.length)} ranking pages · PAA ${String(drafter.paa.length)} · ${drafter.cacheHit ? "cache" : "live"} · ${drafter.retrievedAt.slice(0, 10)}`,
+    });
+  } else if (brief !== null) {
+    provenance.push({
+      label: "SERP",
+      source: "DataForSEO (primary) / SerpApi (fallback)",
+      status: "unavailable",
+      detail: "Brief exists but contains no usable organic results.",
     });
   }
 
@@ -218,23 +236,41 @@ export async function research(ctx: StageContext): Promise<StageResult> {
     Math.max(MIN_TARGET_WORDS, measured > 0 ? measured : DEFAULT_TARGET_WORDS),
   );
 
-  const questions = [
-    ...(brief?.questions ?? []),
-    ...gscQueries.map((q) => q.query).filter((q) => q.includes("?")),
-  ];
+  const recipeText = [
+    article.title,
+    article.keyword,
+    ...(state.parsed?.ingredients ?? []),
+    ...(state.parsed?.steps ?? []),
+  ].join(" ");
+
+  const filteredPaa = filterPaaForRecipe(
+    drafter.paa.length > 0 ? drafter.paa : (brief?.questions ?? []),
+    recipeText,
+    article.keyword,
+  );
+
+  const gscQuestionLike = gscQueries
+    .map((q) => q.query)
+    .filter((q) => q.includes("?"));
+
+  const questions = [...new Set([...filteredPaa, ...gscQuestionLike])].slice(
+    0,
+    12,
+  );
 
   const payload: JobResearch = {
     keyword: article.keyword,
     targetWords,
     terms: (brief?.terms ?? []).slice(0, 20).map((t) => t.term),
     headings: (brief?.headings ?? []).slice(0, 12).map((h) => h.text),
-    questions: [...new Set(questions)].slice(0, 12),
-    serpPages: brief?.serp.length ?? 0,
+    questions,
+    serpPages: drafter.topResults.length || (brief?.serp.length ?? 0),
     internalPosts: index.all
       .filter((t) => t.type === "post")
       .slice(0, 60)
       .map((t) => ({ title: t.title, url: t.url })),
     provenance,
+    drafter,
   };
 
   state.research = payload;
@@ -243,6 +279,9 @@ export async function research(ctx: StageContext): Promise<StageResult> {
   ctx.log("researched", {
     serpPages: payload.serpPages,
     questions: payload.questions.length,
+    paaFiltered: filteredPaa.length,
+    provider: drafter.provider,
+    cacheHit: drafter.cacheHit,
     internalPosts: payload.internalPosts.length,
     serpTarget,
     houseTarget,
@@ -255,6 +294,8 @@ export async function research(ctx: StageContext): Promise<StageResult> {
       serpPages: payload.serpPages,
       questions: payload.questions.length,
       internalPosts: payload.internalPosts.length,
+      provider: drafter.provider,
+      cacheHit: drafter.cacheHit,
       provenance: provenance.map((p) => `${p.label}: ${p.status}`),
     },
   };
@@ -290,6 +331,14 @@ export async function outline(ctx: StageContext): Promise<StageResult> {
       steps: clip(formatSteps(parsed), 1_400),
       questions: research.questions.slice(0, 8),
       posts: research.internalPosts,
+      intent: research.drafter?.searchIntent,
+      headings: research.drafter?.competitorTitles.slice(0, 8),
+      terms: research.drafter?.recurringTerms.slice(0, 8).map((t) => t.term),
+      researchProvider: research.drafter
+        ? providerDisplayName(research.drafter.provider)
+        : undefined,
+      researchNote:
+        "Use SERP evidence for intent, gaps, and questions. Do not copy competitor outlines.",
     }),
     "",
     "Plan the post. Output one line per section, nothing else, in this exact format:",
@@ -420,20 +469,48 @@ function factsFor(
     stepsClip?: number;
     posts?: boolean;
     research?: boolean;
+    /** Section keys that decide how much SERP context to include. */
+    sectionKeys?: SectionKey[];
   },
 ): string {
   const parsed = ctx.state.parsed;
   const research = ctx.state.research;
   if (parsed === undefined) return "";
+
+  const recipeText = [
+    ctx.article.title,
+    ctx.article.keyword,
+    ...parsed.ingredients,
+    ...parsed.steps,
+  ].join(" ");
+
   const includeResearch = extra?.research !== false;
+  const keys = extra?.sectionKeys ?? [];
+  const slice =
+    includeResearch && keys.length > 0
+      ? researchSliceForSections(research?.drafter, keys, { recipeText })
+      : includeResearch
+        ? {
+            terms: research?.terms,
+            questions: research?.questions,
+            headings: research?.headings,
+          }
+        : {};
+
   return factBuckets({
     title: ctx.article.title,
     keyword: ctx.article.keyword,
     ingredients: clip(formatIngredients(parsed), extra?.ingredientsClip ?? 1_400),
     steps: clip(formatSteps(parsed), extra?.stepsClip ?? 800),
-    terms: includeResearch ? research?.terms : undefined,
-    questions: includeResearch ? research?.questions : undefined,
-    headings: includeResearch ? research?.headings : undefined,
+    terms: slice.terms,
+    questions: slice.questions,
+    headings: slice.headings,
+    intent: slice.intent,
+    titleTerms: slice.titleTerms,
+    researchNote: slice.note,
+    researchProvider: research?.drafter
+      ? providerDisplayName(research.drafter.provider)
+      : undefined,
     posts: extra?.posts === false ? [] : research?.internalPosts.slice(0, 24),
   });
 }
@@ -548,10 +625,24 @@ async function writeGroup(
     ? selectSpecialtyIngredients(parsed.ingredients)
     : [];
 
+  /*
+   * SERP research allocation by section.
+   *
+   * Steps get recipe only — competitor SERP must not pollute cooking
+   * instructions. Intro/FAQ get compact research; why/serving get minimal.
+   */
+  const wantsResearch = group.keys.some((k) =>
+    ["intro", "why", "ingredients", "serving", "related", "faq", "variations"].includes(
+      k,
+    ),
+  );
+  const researchKeys = group.keys.filter((k) => k !== "steps" && k !== "tips");
+
   const user = [
     factsFor(ctx, {
       posts: namesSiblings,
-      research: group.keys.includes("intro") || group.keys.includes("faq"),
+      research: wantsResearch && researchKeys.length > 0,
+      sectionKeys: researchKeys,
       stepsClip: group.keys.includes("steps") ? 1_400 : 400,
       ingredientsClip:
         group.keys.includes("ingredients") || group.keys.includes("steps") ? 1_400 : 700,
@@ -581,6 +672,7 @@ async function writeGroup(
     "",
     "Facts come only from RECIPE_CONTEXT, RESEARCH_CONTEXT and SITE_CONTEXT.",
     "STYLE_CONTEXT is rhythm and jokes. Never copy an ingredient or method from it.",
+    "RESEARCH_CONTEXT is search evidence, not recipe truth.",
     "",
     "Output format — use these exact delimiters and no other commentary:",
     ...targets.map((t) => `<<<SECTION:${t.key}>>>\n(markdown for ${t.key})`),
@@ -681,7 +773,7 @@ export async function recipe(ctx: StageContext): Promise<StageResult> {
         briefFor(["recipe-card"]),
       ].join("\n\n"),
       user: [
-        factsFor(ctx, { ingredientsClip: 700, stepsClip: 400, posts: false }),
+        factsFor(ctx, { ingredientsClip: 700, stepsClip: 400, posts: false, research: false }),
         "",
         `Recipe card name: ${card.name || (row?.title ?? ctx.article.title)}`,
         "",
@@ -751,7 +843,12 @@ export async function faq(ctx: StageContext): Promise<StageResult> {
   ].join("\n\n");
 
   const user = [
-    factsFor(ctx, { ingredientsClip: 1_000, stepsClip: 1_200 }),
+    factsFor(ctx, {
+      ingredientsClip: 1_000,
+      stepsClip: 1_200,
+      sectionKeys: ["faq"],
+      research: true,
+    }),
     "",
     "Write 3 to 5 FAQs for this recipe.",
     "",
@@ -759,8 +856,10 @@ export async function faq(ctx: StageContext): Promise<StageResult> {
     "Q: the question",
     "A: the answer",
     "",
-    "Answer only from RECIPE_CONTEXT. RESEARCH_CONTEXT questions are suggestions,",
-    "not facts. Never import an ingredient, method or timing from STYLE_CONTEXT.",
+    "Answer only from RECIPE_CONTEXT. RESEARCH_CONTEXT questions (including PAA)",
+    "are topic suggestions, not facts. Never create a FAQ solely because a PAA",
+    "exists — skip any question the recipe cannot answer. Never import an",
+    "ingredient, method or timing from STYLE_CONTEXT or competitor content.",
   ]
     .filter((l) => l !== "")
     .join("\n");
@@ -803,8 +902,9 @@ function asQuestion(text: string): string {
 }
 
 const SECTION_FAQ_RULE = [
-  "Answer only from the pasted recipe and general vegan cooking knowledge.",
-  "Never state a time, temperature or quantity the recipe does not give.",
+  "Answer only from RECIPE_CONTEXT. Nothing else is a fact.",
+  "Never use 'general cooking knowledge' to invent a time, temperature,",
+  "quantity, ingredient or substitution the recipe does not give.",
   "Never make a health or nutrition claim.",
   "Conversational, 1-3 sentences per answer. No links, no images.",
   "Every question must read as a question a reader would actually type.",

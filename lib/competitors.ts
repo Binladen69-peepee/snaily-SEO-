@@ -2,12 +2,14 @@ import { crawlSite } from "@/lib/audit/crawler";
 import { prisma } from "@/lib/db";
 import { estimateTraffic } from "@/lib/keywords/ctr";
 import { estimateKeyword } from "@/lib/keywords/estimate";
+import { dataForSeoConfigured, getCachedBacklinkSummary } from "@/lib/dataforseo";
+import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
+import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
 import { getDomainAuthority } from "@/lib/metrics/authority";
 import { readCitations } from "@/lib/metrics/citations";
 import { getCachedLinkCounts, getLinkProfile } from "@/lib/metrics/link-data";
 import { scoreLinkCounts } from "@/lib/metrics/link-counts";
 import { scorePage } from "@/lib/metrics/page-authority";
-import { serpFetch } from "@/lib/keywords/providers/serpapi";
 import { readPage, type PageContent } from "@/lib/optimizer";
 import { extractTerms, type TermCount } from "@/lib/text";
 import type { Keyword } from "@/lib/keywords/types";
@@ -106,7 +108,7 @@ export type MentionReport = {
   backlinks: number | null;
   /** Distinct linking domains from the same graph. */
   domainLinkingDomains: number | null;
-  /** True when SERPAPI_KEY is absent, so only estimates are shown. */
+  /** True when neither DataForSEO nor SerpApi is configured. */
   liveUnavailable: boolean;
 };
 
@@ -126,20 +128,38 @@ export async function findMentions(domain: string): Promise<MentionReport> {
     domainAuthority: scored?.score.value ?? null,
     trust: scored?.trust.value ?? null,
   };
-  const links = scoreLinkCounts({
-    openPageRank: scored?.openPageRank ?? null,
-    domainAuthority: scored?.score.value ?? null,
-    url: `https://${domain}/`,
-    pageAuthority: scored?.score.value ?? null,
-    position: 1,
-  });
-  const graph = {
-    backlinks: links?.domainBacklinks ?? null,
-    domainLinkingDomains: links?.domainLinkingDomains ?? null,
+
+  let graph = {
+    backlinks: null as number | null,
+    domainLinkingDomains: null as number | null,
   };
 
-  const apiKey = (process.env.SERPAPI_KEY ?? "").trim();
-  if (apiKey === "") {
+  if (dataForSeoConfigured()) {
+    const summary = await getCachedBacklinkSummary(domain).catch(() => null);
+    if (summary) {
+      graph = {
+        backlinks: summary.backlinks,
+        domainLinkingDomains: summary.referringDomains,
+      };
+    }
+  }
+
+  if (graph.backlinks === null && graph.domainLinkingDomains === null) {
+    const links = scoreLinkCounts({
+      openPageRank: scored?.openPageRank ?? null,
+      domainAuthority: scored?.score.value ?? null,
+      measuredReferringDomains: scored?.referringDomains ?? null,
+      url: `https://${domain}/`,
+      pageAuthority: scored?.score.value ?? null,
+      position: 1,
+    });
+    graph = {
+      backlinks: links?.domainBacklinks ?? null,
+      domainLinkingDomains: links?.domainLinkingDomains ?? null,
+    };
+  }
+
+  if (!dataForSeoConfigured() && !serpApiConfigured()) {
     return {
       domain,
       mentions: [],
@@ -150,32 +170,32 @@ export async function findMentions(domain: string): Promise<MentionReport> {
     };
   }
 
-  const data = await serpFetch<{
-    error?: string;
-    organic_results?: {
-      title?: string;
-      link?: string;
-      snippet?: string;
-    }[];
-  }>(apiKey, "google", `"${domain}" -site:${domain}`, "us");
-
-  const mentions: Mention[] = (data.organic_results ?? [])
-    .map((r) => {
-      const url = r.link ?? "";
-      let host = "";
-      try {
-        host = new URL(url).hostname.replace(/^www\./, "");
-      } catch {
-        host = "";
-      }
-      return {
-        title: r.title ?? url,
-        url,
-        domain: host,
-        snippet: r.snippet ?? "",
-      };
-    })
-    .filter((m) => m.url !== "" && m.domain !== domain);
+  let mentions: Mention[] = [];
+  try {
+    const serp = await getNormalizedSerp({
+      keyword: `"${domain}" -site:${domain}`,
+      country: "us",
+      depth: 10,
+      preferProvider: "dataforseo",
+    });
+    mentions = serp.organicResults
+      .map((r) => ({
+        title: r.title,
+        url: r.url,
+        domain: r.domain,
+        snippet: r.snippet,
+      }))
+      .filter((m) => m.url !== "" && m.domain !== domain);
+  } catch {
+    return {
+      domain,
+      mentions: [],
+      referringDomains: 0,
+      authority,
+      ...graph,
+      liveUnavailable: true,
+    };
+  }
 
   return {
     domain,
@@ -379,24 +399,60 @@ async function positionsFromSerpCache(
   const found = new Map<string, number>();
   if (keywords.length === 0) return found;
 
+  const lowered = keywords.map((k) => k.toLowerCase());
+
   const rows = await prisma.serpCache.findMany({
     where: {
-      engine: "google",
       country,
-      query: { in: keywords.map((k) => k.toLowerCase()) },
+      OR: [
+        { engine: "google", query: { in: lowered } },
+        {
+          engine: "serp_norm",
+          // Normalized keys are `keyword|hl=…|depth=…|device=…`
+          OR: lowered.map((k) => ({ query: { startsWith: `${k}|` } })),
+        },
+      ],
     },
-    select: { query: true, payload: true },
+    select: { query: true, engine: true, payload: true },
   });
 
   for (const row of rows) {
-    // Subdomains count, and the best slot wins when a domain holds several.
-    const position = positionIn(
-      row.payload as {
-        organic_results?: { position?: number; link?: string }[];
-      },
-      domain,
-    );
-    if (position !== null) found.set(row.query, position);
+    let organic: { position: number; url: string; domain: string }[] = [];
+    const payload = row.payload as {
+      organicResults?: { position: number; url: string; domain: string }[];
+      organic_results?: { position?: number; link?: string }[];
+    };
+
+    if (row.engine === "serp_norm" && Array.isArray(payload.organicResults)) {
+      organic = payload.organicResults;
+    } else if (Array.isArray(payload.organic_results)) {
+      organic = payload.organic_results.map((r, i) => {
+        const url = r.link ?? "";
+        let host = "";
+        try {
+          host = new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          host = "";
+        }
+        return {
+          position: r.position ?? i + 1,
+          url,
+          domain: host,
+        };
+      });
+    }
+
+    const position = positionIn(organic, domain);
+    if (position === null) continue;
+
+    const keyword =
+      row.engine === "serp_norm"
+        ? row.query.split("|")[0]!.toLowerCase()
+        : row.query.toLowerCase();
+    const existing = found.get(keyword);
+    if (existing === undefined || position < existing) {
+      found.set(keyword, position);
+    }
   }
 
   return found;
@@ -462,27 +518,18 @@ export async function getSearchConsoleKeywords(
   });
 }
 
-/** Finds a domain's best position inside one SERP payload. */
+/** Finds a domain's best position inside normalized organic results. */
 function positionIn(
-  payload: { organic_results?: { position?: number; link?: string }[] },
+  organic: { position: number; url: string; domain: string }[],
   domain: string,
 ): number | null {
   let best: number | null = null;
+  const target = domain.replace(/^www\./, "").toLowerCase();
 
-  for (const result of payload.organic_results ?? []) {
-    let host = "";
-    try {
-      host = new URL(result.link ?? "").hostname
-        .replace(/^www\./, "")
-        .toLowerCase();
-    } catch {
-      continue;
-    }
-    if (host !== domain && !host.endsWith(`.${domain}`)) continue;
-
-    const position = result.position;
-    if (typeof position !== "number") continue;
-    if (best === null || position < best) best = position;
+  for (const result of organic) {
+    const host = result.domain.replace(/^www\./, "").toLowerCase();
+    if (host !== target && !host.endsWith(`.${target}`)) continue;
+    if (best === null || result.position < best) best = result.position;
   }
 
   return best;
@@ -492,8 +539,8 @@ function positionIn(
  * Checks live ranking positions for a specific set of keywords.
  *
  * Opt-in because it spends real API credit: every keyword not already in the
- * cache costs one SerpApi search. Cached keywords are free, and each lookup
- * refills the cache, so the free path above widens over time.
+ * cache costs one SERP lookup (DataForSEO primary, SerpApi fallback). Cached
+ * keywords are free, and each lookup refills the cache.
  *
  * Keywords the domain does not rank for come back as null rather than being
  * omitted, so the caller can tell "checked, not ranking" from "not checked".
@@ -503,24 +550,27 @@ export async function lookupPositions(
   keywords: string[],
   country: string,
 ): Promise<Record<string, number | null>> {
-  const apiKey = (process.env.SERPAPI_KEY ?? "").trim();
-  if (apiKey === "") {
+  if (!dataForSeoConfigured() && !serpApiConfigured()) {
     throw new Error(
-      "Live position checks need SERPAPI_KEY. Only cached positions are available.",
+      "Live position checks need DataForSEO or SerpApi. Only cached positions are available.",
     );
   }
 
   const out: Record<string, number | null> = {};
 
-  // Sequential on purpose — a burst of parallel searches is exactly what
-  // SerpApi rate-limits, and this runs at most ten times.
+  // Sequential on purpose — avoid bursting rate limits; at most ten keywords.
   for (const keyword of keywords) {
-    const payload = await serpFetch<{
-      error?: string;
-      organic_results?: { position?: number; link?: string }[];
-    }>(apiKey, "google", keyword, country);
-
-    out[keyword] = positionIn(payload, domain);
+    try {
+      const serp = await getNormalizedSerp({
+        keyword,
+        country,
+        depth: 10,
+        preferProvider: "dataforseo",
+      });
+      out[keyword] = positionIn(serp.organicResults, domain);
+    } catch {
+      out[keyword] = null;
+    }
   }
 
   return out;

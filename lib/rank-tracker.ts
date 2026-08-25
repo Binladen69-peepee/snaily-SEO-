@@ -1,16 +1,15 @@
 import { prisma } from "@/lib/db";
+import { dataForSeoConfigured } from "@/lib/dataforseo/config";
 import { estimateKeyword } from "@/lib/keywords/estimate";
-import { serpFetch } from "@/lib/keywords/providers/serpapi";
+import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
+import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
 
 /**
  * Rank tracking.
  *
- * Positions are measured against the live SERP, which is what a rank tracker
- * is for: Search Console reports an *average* position across every impression,
- * so a keyword sitting at 3 in the US and 40 elsewhere averages to something
- * that matches neither. Where Search Console data exists it is still imported,
- * clearly labelled, because it is free and covers keywords nobody thought to
- * track.
+ * Positions are measured against the live SERP (DataForSEO primary, SerpApi
+ * fallback). Search Console averages remain available as a free secondary
+ * signal where imported.
  */
 
 export const ENGINES = [
@@ -132,31 +131,21 @@ export function domainOf(url: string): string {
   }
 }
 
-type SerpPayload = {
-  error?: string;
-  organic_results?: { position?: number; link?: string }[];
-};
-
-/** Best position for a domain inside one SERP payload, with its URL. */
+/** Best position for a domain inside normalized organic results. */
 function findDomain(
-  payload: SerpPayload,
+  organic: { position: number; url: string; domain: string }[],
   domain: string,
 ): { rank: number; url: string } | null {
   let best: { rank: number; url: string } | null = null;
+  const target = domain.replace(/^www\./, "").toLowerCase();
 
-  for (const r of payload.organic_results ?? []) {
-    const link = r.link ?? "";
-    let host = "";
-    try {
-      host = new URL(link).hostname.replace(/^www\./, "").toLowerCase();
-    } catch {
-      continue;
+  for (const r of organic) {
+    const host = r.domain.replace(/^www\./, "").toLowerCase();
+    if (host !== target && !host.endsWith(`.${target}`)) continue;
+    if (r.position > MAX_RANK) continue;
+    if (best === null || r.position < best.rank) {
+      best = { rank: r.position, url: r.url };
     }
-    if (host !== domain && !host.endsWith(`.${domain}`)) continue;
-
-    const rank = r.position;
-    if (typeof rank !== "number" || rank > MAX_RANK) continue;
-    if (best === null || rank < best.rank) best = { rank, url: link };
   }
 
   return best;
@@ -165,20 +154,19 @@ function findDomain(
 /**
  * Measures live positions for a set of tracked keywords and records them.
  *
- * Each keyword is one SerpApi search, so the caller decides when to spend —
- * nothing here runs on a schedule. Cached SERPs cost nothing, which makes a
- * re-check within the cache window free.
+ * Each keyword is one SERP lookup (DataForSEO primary). Cached SERPs cost
+ * nothing. Caller decides when to spend — nothing here runs on a schedule.
  */
 export async function checkRanks(
   keywordIds: string[],
   domain: string,
 ): Promise<{ checked: number; ranked: number; error?: string }> {
-  const apiKey = (process.env.SERPAPI_KEY ?? "").trim();
-  if (apiKey === "") {
+  if (!dataForSeoConfigured() && !serpApiConfigured()) {
     return {
       checked: 0,
       ranked: 0,
-      error: "Live rank checks need SERPAPI_KEY in the environment.",
+      error:
+        "Live rank checks need DataForSEO or SerpApi credentials in the environment.",
     };
   }
 
@@ -188,22 +176,16 @@ export async function checkRanks(
 
   let ranked = 0;
 
-  // Sequential: a burst of parallel searches is what SerpApi rate-limits, and
-  // this runs over a handful of keywords.
   for (const k of keywords) {
-    const extra: Record<string, string> = { num: "100" };
-    if (k.location !== null && k.location !== "") extra.location = k.location;
-
     let found: { rank: number; url: string } | null = null;
     try {
-      const payload = await serpFetch<SerpPayload>(
-        apiKey,
-        "google",
-        k.keyword,
-        k.country,
-        extra,
-      );
-      found = findDomain(payload, domain);
+      const serp = await getNormalizedSerp({
+        keyword: k.keyword,
+        country: k.country,
+        depth: MAX_RANK,
+        preferProvider: "dataforseo",
+      });
+      found = findDomain(serp.organicResults, domain);
     } catch {
       // One bad keyword must not abandon the rest of the batch.
       continue;

@@ -75,6 +75,20 @@ export const SERVICES: Record<string, ServiceInfo> = {
     console: "https://vercel.com/dashboard",
     consoleLabel: "Vercel project settings",
   },
+  DATAFORSEO_LOGIN: {
+    id: "DATAFORSEO_LOGIN",
+    vendor: "DataForSEO",
+    favicon: "https://dataforseo.com/favicon.ico",
+    console: "https://app.dataforseo.com/api-access",
+    consoleLabel: "DataForSEO API access",
+  },
+  DATAFORSEO_PASSWORD: {
+    id: "DATAFORSEO_PASSWORD",
+    vendor: "DataForSEO",
+    favicon: "https://dataforseo.com/favicon.ico",
+    console: "https://app.dataforseo.com/api-access",
+    consoleLabel: "DataForSEO API access",
+  },
 };
 
 /** For the lettermark fallback when a favicon will not load. */

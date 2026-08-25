@@ -24,6 +24,7 @@ const PLACEHOLDER_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "instruction phrase", re: /\b(?:insert (?:here|paragraph|content|text)|add (?:content|paragraph|a paragraph) here|section goes here|write (?:the |a )?(?:section|paragraph|intro) here|content goes here|coming soon)\b/i },
   { label: "unresolved AI marker", re: /\b(?:as an AI language model|Sure, here(?:'s| is))\b/i },
   { label: "pipeline delimiter", re: /<<<[^>]*>>>/ },
+  { label: "encoded pipeline delimiter", re: /&lt;&lt;&lt;[\s\S]{0,80}?&gt;&gt;&gt;/i },
   /*
    * Markdown image syntax reaching the editor is a placeholder by definition:
    * the converter turns real images into <img>, so anything still written as
@@ -31,6 +32,12 @@ const PLACEHOLDER_PATTERNS: { label: string; re: RegExp }[] = [
    * live as "![Image of kabocha squash soup]".
    */
   { label: "markdown image placeholder", re: /!\[[^\]]*\]/ },
+  /*
+   * Generation is told not to write Markdown links. Real anchors are stamped
+   * later as HTML. A leftover `[name](url)` is either a failed conversion or
+   * an invented URL.
+   */
+  { label: "markdown link", re: /\[[^\]]{1,80}\]\(\s*https?:\/\/[^)]+\)/i },
 ];
 
 /**

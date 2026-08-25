@@ -133,7 +133,12 @@ export function KeywordDetailView({
 
               <dl className="hidden shrink-0 gap-4 text-right sm:flex">
                 <div>
-                  <dt className="text-xs text-muted-foreground">DA</dt>
+                  <dt
+                    className="text-xs text-muted-foreground"
+                    title="Domain strength — DataForSEO Rank when connected, otherwise Snaily Domain Authority. Not Moz DA."
+                  >
+                    DA
+                  </dt>
                   <dd className="tabular text-sm font-medium">
                     {r.domainAuthority ?? "N/A"}
                   </dd>

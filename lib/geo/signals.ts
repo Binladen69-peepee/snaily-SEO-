@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
-import { serpFetch } from "@/lib/keywords/providers/serpapi";
+import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
+import { dataForSeoConfigured } from "@/lib/dataforseo/config";
+import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
 
 /**
  * Raw demand signal for a seed topic.
@@ -23,37 +25,29 @@ export type RawSignal = {
   position?: number;
 };
 
-type SerpPayload = {
-  error?: string;
-  related_questions?: { question?: string }[];
-  related_searches?: { query?: string }[];
-};
-
 /** People Also Ask and related searches for the seed. One cached SERP call. */
 async function fromSerp(seed: string, country: string): Promise<RawSignal[]> {
-  const apiKey = (process.env.SERPAPI_KEY ?? "").trim();
-  if (apiKey === "") return [];
+  if (!dataForSeoConfigured() && !serpApiConfigured()) return [];
 
-  let payload: SerpPayload;
   try {
-    payload = await serpFetch<SerpPayload>(apiKey, "google", seed, country);
+    const serp = await getNormalizedSerp({
+      keyword: seed,
+      country,
+      depth: 10,
+      preferProvider: "dataforseo",
+    });
+    const out: RawSignal[] = [];
+    for (const phrase of serp.paa) {
+      out.push({ phrase, source: "paa" });
+    }
+    for (const phrase of serp.relatedSearches) {
+      out.push({ phrase, source: "related" });
+    }
+    return out;
   } catch {
     // A missing SERP must not stop Search Console signal being used.
     return [];
   }
-
-  const out: RawSignal[] = [];
-
-  for (const q of payload.related_questions ?? []) {
-    const phrase = q.question?.trim();
-    if (phrase) out.push({ phrase, source: "paa" });
-  }
-  for (const r of payload.related_searches ?? []) {
-    const phrase = r.query?.trim();
-    if (phrase) out.push({ phrase, source: "related" });
-  }
-
-  return out;
 }
 
 /**

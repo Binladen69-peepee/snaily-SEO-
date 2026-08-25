@@ -43,9 +43,9 @@ humour never gets between the reader and the number of days.
   ],
 
   examples: [
-    "Can I make this ahead? Yes. Cool it, cover it, refrigerate up to 4 days. Reheat gently on the stove with a splash of the cooking liquid already in the recipe - not with an ingredient you were not given.",
+    "Can I substitute cornmeal for masa harina in vegan tamale pie? You can, and the recipe notes this as an option. Just know that masa harina has a deeper, more complex corn flavor and much finer texture than regular cornmeal, so skipping it entirely will still give you a great topping, just a slightly less tamale-forward one.",
     "Is this vegan tamale pie gluten free? It can be. Swap the all-purpose flour for a gluten-free all-purpose blend and you're set. Just double-check that your chili is also certified gluten free if that matters for your situation.",
-    "How should I store and reheat vegan torta de chorizo? Come on, you've made a sandwich before in life right? For best results, store the components separately and assemble fresh next time. This keeps the bread from getting soggy and makes reheating way less annoying.",
+    "How should I store and reheat vegan tamale pie? Refrigerating: Transfer leftovers to an airtight container and refrigerate for up to 4 days. Freezing: Let it cool completely, then freeze portions up to 3 months. Thaw overnight in the fridge. Reheat covered on the stove over medium-low with a small splash of vegetable broth, 5 to 7 minutes, or at 350°F (175°C) for 15 to 20 minutes.",
     "Why does my mole poblano taste bitter? Because, my silly goose-guy, the chiles or spices probably got toasted a little too hard. Pull them as soon as they smell fragrant and never let them go dark or acrid.",
   ],
 

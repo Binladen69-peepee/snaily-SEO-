@@ -91,7 +91,7 @@ async function Backlinks({ domain }: { domain: string }) {
         {report.mentions.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
             {report.liveUnavailable
-              ? "Live citation lookup needs SERPAPI_KEY. Only the estimates above are available."
+              ? "Live citation lookup needs DataForSEO or SerpApi. Only the estimates above are available."
               : `Google returned no pages citing ${domain}.`}
           </p>
         ) : (

@@ -145,8 +145,13 @@ export function scorePage(input: PageAuthorityInput): Measured {
     );
   }
 
+  const domainSrc =
+    input.domain?.source === "dataforseo"
+      ? "DataForSEO domain Rank"
+      : "domain authority";
+
   return estimated(
     score,
-    "Snaily Page Authority, projected. This page's own site has not been crawled, so the score comes from its domain's authority and its ranking position only.",
+    `Page strength projected from ${domainSrc} and SERP position. Not Moz PA. This page's own site has not been crawled.`,
   );
 }

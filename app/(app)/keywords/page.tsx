@@ -67,7 +67,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
                 <div className="mb-4 flex flex-wrap justify-center gap-2">
                   {provider.isMock ? (
                     <Badge variant="warning">
-                      Sample data — add SERPAPI_KEY for live results
+                      Sample data — add DataForSEO credentials for live results
                     </Badge>
                   ) : (
                     <>
@@ -75,7 +75,7 @@ export default async function KeywordsPage({ searchParams }: Props) {
                       {provider.volumeIsEstimated && (
                         <Badge
                           variant="secondary"
-                          title="SerpApi returns rankings, not keyword metrics. Volume, CPC and link counts are estimated until a keyword-data source is connected."
+                          title="SERP rankings come from SerpApi when quota remains, otherwise DataForSEO. Volume/CPC may still be estimated. Both providers stay configured."
                         >
                           Volume &amp; authority estimated
                         </Badge>

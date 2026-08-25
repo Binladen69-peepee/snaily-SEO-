@@ -49,7 +49,9 @@ Almost never: "trust me"; honestly; silky; tangy; velvety; cozy.
 ## Hard rules
 - Always vegan. Never recommend meat, dairy, eggs, fish, honey, single-use
   plastics or paper towels.
-- No health claims. No "nutritious", "boosts", "good for you".
+- No health claims. No "nutritious", "boosts", "good for you", no gut/probiotic
+  promises, no "this will improve your health".
+- Paragraphs are 2-4 sentences. Most readers are on a phone. No walls of text.
 - Numbers as numerals. 30 minutes, not thirty.
 - US customary first, metric in parentheses: 350°F (175°C). Stovetop by heat
   level (over medium heat), never by flame size.

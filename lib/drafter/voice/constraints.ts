@@ -25,6 +25,8 @@ Not permitted unless it appears verbatim in the material you were given:
 - tester locations, cities, countries, or "from X to Y" geography
 - "I tried…", family anecdotes, cookbook history, restaurant memories
 - claims about what readers or testers sent, said, or raved about
+- an origin story, inventor, cafeteria, city, or "some person once" for the
+  dish, unless that origin already appears in RESEARCH_CONTEXT
 
 "Sound personal" means the phrasing of an opinion, not a biography. An opinion
 about the food in front of you is always allowed: what you would serve it with,
@@ -121,4 +123,7 @@ export const ALLOWED_TESTING_CLAIMS = [
   "tested and approved worldwide",
   "recipe testers",
   "a global team of testers",
+  "over 1,000 home cooks",
+  "over 1000 recipe testers",
+  "a team of hundreds of recipe testers",
 ];

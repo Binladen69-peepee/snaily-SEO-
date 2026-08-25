@@ -1,7 +1,10 @@
 import * as cheerio from "cheerio";
 
 import { countPhrase, weighTerm, type TargetTerm } from "@/lib/content-score";
-import { getKeywordProvider } from "@/lib/keywords/provider";
+import { difficultyFromSerpComposition } from "@/lib/keywords/authority";
+import { estimateKeyword } from "@/lib/keywords/estimate";
+import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
+import type { NormalizedSerp } from "@/lib/keywords/serp-normalized";
 import {
   extractEntities,
   extractQuestions,
@@ -73,6 +76,8 @@ export type Brief = {
   targets: TargetTerm[];
   /** Words the ranking pages put in their own titles, most common first. */
   titleWords: string[];
+  /** Live SERP snapshot used to build this brief (one provider call). */
+  serpSnapshot: NormalizedSerp | null;
   /** Present only when a URL was supplied. */
   target?: {
     page: PageContent;
@@ -413,10 +418,43 @@ export async function buildBrief(
   country: string,
   targetUrl?: string,
 ): Promise<Brief> {
-  const provider = getKeywordProvider();
-  const detail = await provider.detail(keyword, country, "en");
+  /*
+   * One SERP fetch for the brief. Drafter prefers DataForSEO; SerpApi is only
+   * the fallback. Depth 15 covers title-term extraction for the optimizer.
+   */
+  let serpSnapshot: NormalizedSerp | null = null;
+  try {
+    serpSnapshot = await getNormalizedSerp({
+      keyword,
+      country,
+      language: "en",
+      depth: 15,
+      preferProvider: "dataforseo",
+    });
+  } catch {
+    serpSnapshot = null;
+  }
 
-  const urls = detail.serp
+  const estimated = estimateKeyword(
+    keyword,
+    country,
+    serpSnapshot?.totalResults ?? undefined,
+  );
+
+  if (serpSnapshot && serpSnapshot.organicResults.length > 0) {
+    const composition = difficultyFromSerpComposition(
+      serpSnapshot.organicResults.map((r) => ({
+        domain: r.domain,
+        title: r.title,
+        url: r.url,
+      })),
+      keyword,
+      serpSnapshot.totalResults,
+    );
+    estimated.difficulty = composition.score;
+  }
+
+  const urls = (serpSnapshot?.organicResults ?? [])
     .map((r) => r.url)
     .filter((u) => u !== "")
     .slice(0, MAX_PAGES);
@@ -444,12 +482,41 @@ export async function buildBrief(
 
   const entities = extractEntities(bodies, 18);
 
+  // Prefer live PAA; fall back to questions mined from competitor pages.
+  const paa = serpSnapshot?.paa ?? [];
+  const mined = extractQuestions(
+    [...bodies, ...analysed.flatMap((p) => p.headings.map((h) => h.text))],
+    14,
+  );
+  const questions = [...new Set([...paa, ...mined])].slice(0, 14);
+
+  // Title words: SERP titles first (works even when crawls are blocked).
+  const serpTitleWords = commonTitleWords(
+    (serpSnapshot?.organicResults ?? []).map((r) => ({
+      title: r.title,
+      h1: "",
+      headings: [],
+      text: "",
+      words: 0,
+      images: 0,
+      links: 0,
+      url: r.url,
+      domain: r.domain,
+      metaDescription: "",
+      ok: true,
+    })),
+  );
+  const crawledTitleWords = commonTitleWords(analysed);
+  const titleWords = [
+    ...new Set([...serpTitleWords, ...crawledTitleWords]),
+  ].slice(0, 12);
+
   const brief: Brief = {
     keyword,
     keywordMetrics: {
-      difficulty: detail.difficulty,
-      volume: detail.volume,
-      cpc: detail.cpc,
+      difficulty: estimated.difficulty,
+      volume: estimated.volume,
+      cpc: estimated.cpc,
     },
     analysed,
     skipped,
@@ -461,12 +528,10 @@ export async function buildBrief(
     headings,
     terms,
     entities,
-    questions: extractQuestions(
-      [...bodies, ...analysed.flatMap((p) => p.headings.map((h) => h.text))],
-      14,
-    ),
+    questions,
     targets: buildTargets(terms, entities, analysed),
-    titleWords: commonTitleWords(analysed),
+    titleWords,
+    serpSnapshot,
   };
 
   if (target) {

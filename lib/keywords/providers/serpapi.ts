@@ -37,33 +37,6 @@ const ENDPOINT = "https://serpapi.com/search.json";
 /** Cached responses are reused for a week — SERPs barely move day to day. */
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Whether a Google SERP for this query is already cached and still fresh.
- *
- * Lets a caller tell "this costs nothing" from "this costs one of the 250
- * searches a month" *before* committing to the lookup. Deep Dive uses it to
- * fill Est. Links, DA and Ranking Pages for free on every row we have already
- * paid for, and to leave the rest for an explicit click.
- */
-export async function hasFreshSerp(
-  query: string,
-  country: string,
-): Promise<boolean> {
-  const cached = await prisma.serpCache.findUnique({
-    where: {
-      engine_query_country: {
-        engine: "google",
-        query: query.toLowerCase(),
-        country,
-      },
-    },
-    select: { fetchedAt: true },
-  });
-  return (
-    cached !== null && Date.now() - cached.fetchedAt.getTime() < CACHE_TTL_MS
-  );
-}
-
 type RichExtension = {
   rating?: number;
   reviews?: number;
@@ -178,6 +151,11 @@ export async function serpFetch<T extends { error?: string }>(
       throw new ProviderError("The SerpApi key was rejected.", "serpapi");
     }
     if (res.status === 429) {
+      // Prevent the rest of the product from hammering an exhausted quota.
+      const { markSerpApiQuotaExhausted } = await import(
+        "@/lib/keywords/serp-api-guard"
+      );
+      markSerpApiQuotaExhausted();
       throw new ProviderError(
         "The SerpApi monthly search quota is used up.",
         "serpapi",

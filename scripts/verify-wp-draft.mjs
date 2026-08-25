@@ -270,8 +270,8 @@ async function main() {
       "focus keyphrase equals the target keyword",
       String(seo.focus_keyword),
     );
-    ok(seo.noindex === true, "search engines may NOT show this content", String(seo.noindex));
-    ok(seo.nofollow === true, "search engines may NOT follow its links", String(seo.nofollow));
+    ok(seo.noindex === false, "Yoast noindex = NO", String(seo.noindex));
+    ok(seo.nofollow === false, "Yoast nofollow = NO", String(seo.nofollow));
     ok(
       String(seo.primary_category ?? "") !== "",
       "primary category set",

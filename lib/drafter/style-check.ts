@@ -54,6 +54,11 @@ const AI_OPENINGS = [
   "at the end of the day",
   "the secret to",
   "trust me when i say",
+  "gets a plant-based makeover",
+  "gets a vegan makeover",
+  "plant-based makeover",
+  "vegan makeover",
+  "a creamy classic gets",
 ];
 
 /** Phrases the style guide bans outright, plus their obvious inflections. */
@@ -107,7 +112,14 @@ const MAJOR_GENERIC_METAPHORS = [
   "pause briefly to admire",
   "the aroma will shift",
   "the foundation is set",
+  "plant-based makeover",
+  "vegan makeover",
+  "gets a makeover",
+  "a creamy classic",
 ];
+
+/** Single banned adjectives that never belong in this author's food writing. */
+const BANNED_FOOD_WORDS = ["cozy", "silky", "velvety"];
 
 /**
  * Distinctive nouns from the style-example corpus.
@@ -263,11 +275,21 @@ export function checkStyle(input: CheckInput): StyleIssue[] {
       );
     }
 
-    if (words(text) < 12) continue;
-
     const lower = text.toLowerCase();
     const sents = sentences(text);
-    const metrics = measureProse(section.html);
+
+    for (const metaphor of MAJOR_GENERIC_METAPHORS) {
+      if (!lower.includes(metaphor)) continue;
+      const sentence = sents.find((s) => s.toLowerCase().includes(metaphor)) ?? text;
+      add("generic metaphor", `"${metaphor}"`, trim(sentence));
+    }
+
+    for (const word of BANNED_FOOD_WORDS) {
+      const hit = sents.find((s) => new RegExp(`\\b${word}\\b`, "i").test(s)) ??
+        (new RegExp(`\\b${word}\\b`, "i").test(text) ? text : undefined);
+      if (hit === undefined) continue;
+      add("generic metaphor", `"${word}"`, trim(hit));
+    }
 
     /* ---- Invented biography ---------------------------------------- */
     for (const marker of INVENTED_CLAIM_MARKERS) {
@@ -284,7 +306,6 @@ export function checkStyle(input: CheckInput): StyleIssue[] {
     for (const pattern of UNSOURCED_CLAIM) {
       const m = pattern.exec(text);
       if (m === null) continue;
-      // The site's own testing wording is documented and allowed.
       const sentence = sents.find((s) => pattern.test(s)) ?? "";
       if (ALLOWED_TESTING_CLAIMS.some((a) => sentence.toLowerCase().includes(a))) {
         continue;
@@ -308,7 +329,6 @@ export function checkStyle(input: CheckInput): StyleIssue[] {
       if (!used) continue;
       if (recipeText.includes(ingredient)) continue;
 
-      // "no butter", "without eggs" are about its absence, which is fine.
       const sentence = sents.find((s) => new RegExp(`\\b${ingredient}\\b`, "i").test(s)) ?? "";
       if (/\b(no|without|skip|instead of|free of|never|isn't|is not|doesn't|does not)\b/i.test(sentence)) {
         continue;
@@ -334,6 +354,10 @@ export function checkStyle(input: CheckInput): StyleIssue[] {
       );
     }
 
+    if (words(text) < 12) continue;
+
+    const metrics = measureProse(section.html);
+
     /* ---- Generic writing -------------------------------------------- */
     for (const opening of AI_OPENINGS) {
       const hit = sents.find((s) => s.toLowerCase().startsWith(opening));
@@ -345,12 +369,6 @@ export function checkStyle(input: CheckInput): StyleIssue[] {
       if (!lower.includes(cliche)) continue;
       const sentence = sents.find((s) => s.toLowerCase().includes(cliche)) ?? "";
       add("cliche", `"${cliche}"`, trim(sentence));
-    }
-
-    for (const metaphor of MAJOR_GENERIC_METAPHORS) {
-      if (!lower.includes(metaphor)) continue;
-      const sentence = sents.find((s) => s.toLowerCase().includes(metaphor)) ?? "";
-      add("generic metaphor", `"${metaphor}"`, trim(sentence));
     }
 
     const genericHits = GENERIC_FOOD_ADJECTIVES.filter((a) => lower.includes(a));

@@ -57,27 +57,61 @@ export function researchContext(input: {
   terms?: string[];
   questions?: string[];
   headings?: string[];
+  intent?: string;
+  titleTerms?: string[];
+  note?: string;
+  provider?: string;
 }): string {
   const terms = (input.terms ?? []).filter((t) => t.trim() !== "");
   const questions = (input.questions ?? []).filter((q) => q.trim() !== "");
   const headings = (input.headings ?? []).filter((h) => h.trim() !== "");
-  if (terms.length === 0 && questions.length === 0 && headings.length === 0) {
+  const titleTerms = (input.titleTerms ?? []).filter((t) => t.trim() !== "");
+  const intent = (input.intent ?? "").trim();
+  if (
+    terms.length === 0 &&
+    questions.length === 0 &&
+    headings.length === 0 &&
+    titleTerms.length === 0 &&
+    intent === ""
+  ) {
     return "";
   }
 
   const lines = [
     "===== RESEARCH_CONTEXT =====",
-    "Verified research for THIS keyword only. Not facts about the recipe.",
+    "Search / competitive evidence for THIS keyword only. Not facts about the recipe.",
+    "Competitor pages and People Also Ask are topic signals — never import their",
+    "ingredients, methods, or claims into this article.",
     "Use a term or question only where it fits. Never invent a search phrase.",
   ];
+  if (input.provider) {
+    lines.push(`Source: ${input.provider}`);
+  }
+  if (intent !== "") {
+    lines.push(`Search intent (inferred): ${intent}`);
+  }
+  if (input.note) {
+    lines.push(input.note);
+  }
   if (terms.length > 0) {
     lines.push("", "Related search terms:", terms.map((t) => `- ${t}`).join("\n"));
+  }
+  if (titleTerms.length > 0) {
+    lines.push(
+      "",
+      "Recurring terms in top SERP titles (for natural coverage, not stuffing):",
+      titleTerms.map((t) => `- ${t}`).join("\n"),
+    );
   }
   if (questions.length > 0) {
     lines.push("", "Questions readers search:", questions.map((q) => `- ${q}`).join("\n"));
   }
   if (headings.length > 0) {
-    lines.push("", "Headings seen on ranking pages:", headings.map((h) => `- ${h}`).join("\n"));
+    lines.push(
+      "",
+      "Competitor titles / coverage (for gaps — do not copy outlines):",
+      headings.map((h) => `- ${h}`).join("\n"),
+    );
   }
   lines.push("===== END RESEARCH_CONTEXT =====");
   return lines.join("\n");
@@ -113,6 +147,10 @@ export function factBuckets(input: {
   terms?: string[];
   questions?: string[];
   headings?: string[];
+  intent?: string;
+  titleTerms?: string[];
+  researchNote?: string;
+  researchProvider?: string;
   posts?: Array<{ title: string; url?: string }>;
 }): string {
   return [
@@ -127,6 +165,10 @@ export function factBuckets(input: {
       terms: input.terms,
       questions: input.questions,
       headings: input.headings,
+      intent: input.intent,
+      titleTerms: input.titleTerms,
+      note: input.researchNote,
+      provider: input.researchProvider,
     }),
     siteContext(input.posts ?? []),
   ]

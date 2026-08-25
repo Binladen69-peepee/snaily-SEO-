@@ -140,6 +140,13 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const body: unknown = await req.json();
+  if (body !== null && typeof body === "object" && "recipe" in body) {
+    return NextResponse.json(
+      { error: "The original recipe paste cannot be changed." },
+      { status: 400 },
+    );
+  }
+
   const parsed = patchSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -153,6 +160,10 @@ export async function PATCH(req: Request, { params }: Params) {
 
   // Both JSON columns are merged rather than replaced, so a panel that only
   // knows about its own fields cannot wipe the other's.
+  //
+  // Empty ingredient/step arrays from a stale editor never wipe a card the
+  // background job (or an earlier edit) already filled. The raw paste in
+  // `article.recipe` is not in this schema and cannot be overwritten here.
   const current =
     editorial || recipeCard
       ? await prisma.article.findUnique({
@@ -160,6 +171,23 @@ export async function PATCH(req: Request, { params }: Params) {
           select: { editorial: true, recipeCard: true },
         })
       : null;
+
+  const storedCard = parseRecipe(current?.recipeCard);
+  const nextCard =
+    recipeCard === undefined
+      ? null
+      : {
+          ...storedCard,
+          ...recipeCard,
+          ingredients:
+            recipeCard.ingredients !== undefined && recipeCard.ingredients.length > 0
+              ? recipeCard.ingredients
+              : storedCard.ingredients,
+          steps:
+            recipeCard.steps !== undefined && recipeCard.steps.length > 0
+              ? recipeCard.steps
+              : storedCard.steps,
+        };
 
   const updated = await prisma.article.update({
     where: { id },
@@ -176,9 +204,7 @@ export async function PATCH(req: Request, { params }: Params) {
             },
           }
         : {}),
-      ...(recipeCard
-        ? { recipeCard: { ...parseRecipe(current?.recipeCard), ...recipeCard } }
-        : {}),
+      ...(nextCard !== null ? { recipeCard: nextCard } : {}),
     },
     select: { id: true, updatedAt: true },
   });

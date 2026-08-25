@@ -101,6 +101,20 @@ export const RECOMMENDATIONS: Record<IssueCode, Recommendation> = {
     effort: "moderate",
   },
 
+  blocked_internal_link: {
+    action:
+      "No action needed unless you expected these to be crawlable — the host answered the crawler with a block (403/429) or the request timed out. Readers clicking the link are unaffected.",
+    why: "A host refusing a crawler says nothing about whether the destination works. These are listed so nothing is hidden, not because they are broken.",
+    effort: "quick",
+  },
+
+  decorative_image: {
+    action:
+      "Nothing to do. These images carry `alt=\"\"`, `role=\"presentation\"` or aria-hidden, which is the correct way to mark an image a screen reader should skip.",
+    why: "Adding alt text to a decorative image makes the page worse for screen-reader users, not better.",
+    effort: "quick",
+  },
+
   short_content: {
     action:
       "Expand the page past 300 words by answering the questions a searcher would actually have.",

@@ -171,7 +171,7 @@ const ENDPOINTS: Record<AiVendor, string> = {
  * misconfigured, and the only symptom was a 502 from the drafter route.
  * gpt-oss-120b is the largest general model the account can reach today.
  *
- * Overridable with GROK_MODEL, which is the real answer when this happens
+ * Overridable with GROK_MODEL or GROQ_MODEL, which is the real answer when this happens
  * again — vendors retire models faster than a deploy cycle.
  */
 const DEFAULT_MODEL: Record<AiVendor, string> = {

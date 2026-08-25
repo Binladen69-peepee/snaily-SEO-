@@ -123,6 +123,22 @@ try {
     ).issues.some((i) => i.code === "placeholder-tokens"),
     "a leaked pipeline delimiter is caught",
   );
+  check(
+    checkDraftQuality(
+      "<h2>A</h2><h2>B</h2><h2>C</h2><h2>D</h2><p>" +
+        "Real prose here for the section body. ".repeat(40) +
+        "&lt;&lt;&lt;SECTION:intro&gt;&gt;&gt;</p>",
+    ).issues.some((i) => i.code === "placeholder-tokens"),
+    "an HTML-encoded pipeline delimiter is caught",
+  );
+  check(
+    checkDraftQuality(
+      "<h2>A</h2><h2>B</h2><h2>C</h2><h2>D</h2><p>" +
+        "Real prose here for the section body. ".repeat(40) +
+        "Try [vegan tamales](https://example.com/invented).</p>",
+    ).issues.some((i) => i.code === "placeholder-tokens"),
+    "a leftover markdown link is caught",
+  );
 
   /*
    * The rest of this suite reads the client's real articles, so unlike the

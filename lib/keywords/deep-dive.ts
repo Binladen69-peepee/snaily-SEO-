@@ -1,6 +1,6 @@
 import { estimateKeyword } from "@/lib/keywords/estimate";
 import { getKeywordProvider } from "@/lib/keywords/provider";
-import { hasFreshSerp } from "@/lib/keywords/providers/serpapi";
+import { hasFreshSerp } from "@/lib/keywords/get-normalized-serp";
 import { crawlGraphConfigured } from "@/lib/metrics/link-data";
 import {
   countTabs,

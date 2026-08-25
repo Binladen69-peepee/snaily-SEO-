@@ -204,7 +204,7 @@ function Toolbar({
   return (
     <div
       className={cn(
-        "sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b border-border bg-white",
+        "sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b border-border bg-background",
         variant === "canvas" ? "shrink-0 px-2 py-1 sm:px-3" : "px-1 py-1",
       )}
     >
@@ -844,7 +844,7 @@ export function RichEditor({
             if (e.isActive("image")) return false;
             return to > from && e.state.doc.textBetween(from, to, " ").trim() !== "";
           }}
-          className="flex items-center gap-0.5 rounded-lg border border-border bg-white p-1 shadow-lg"
+          className="flex items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-lg"
         >
           <button
             type="button"
@@ -958,8 +958,8 @@ export function RichEditor({
     <div
       className={cn(
         variant === "canvas"
-          ? "flex min-h-0 flex-1 flex-col bg-white"
-          : "overflow-hidden rounded-xl border border-border bg-white shadow-sm",
+          ? "flex min-h-0 flex-1 flex-col bg-background"
+          : "overflow-hidden rounded-xl border border-border bg-background shadow-sm",
         className,
       )}
     >

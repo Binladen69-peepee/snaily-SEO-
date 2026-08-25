@@ -10,6 +10,11 @@ import {
   resolveTarget,
   type LinkIndex,
 } from "@/lib/content/link-index";
+import {
+  buildArticleDocument,
+  excerptFor,
+  type ArticleDocument,
+} from "@/lib/drafter/document";
 import { parseEditorial, type EditorialMeta } from "@/lib/drafter/editorial";
 import { sanitizeEditorHtml } from "@/lib/drafter/sanitize";
 import { stripPlaceholders } from "@/lib/drafter/post-template";
@@ -22,6 +27,7 @@ import {
   WordPressError,
   type WpDraftPayload,
   type WpRecipeReport,
+  type WpSeoReport,
 } from "@/lib/wordpress/client";
 import {
   populateTemplate,
@@ -192,6 +198,19 @@ export async function buildExport(
   const meta = parseEditorial(article.editorial);
 
   /*
+   * One canonical document, built once. Every SEO value below is read off it
+   * rather than re-derived here, so the meta description that reaches Yoast and
+   * the excerpt that reaches WordPress are the same string by construction.
+   */
+  const doc: ArticleDocument = buildArticleDocument({
+    title: article.title,
+    keyword: article.keyword ?? "",
+    content: article.content ?? "",
+    recipeCard: article.recipeCard,
+    editorial: article.editorial,
+  });
+
+  /*
    * Unfilled template prompts never leave the app. Shipping "Hook - three or
    * four sentences" into a post is worse than shipping an empty section.
    */
@@ -259,18 +278,29 @@ export async function buildExport(
   const payload: WpDraftPayload = {
     title: article.title,
     content: body,
-    excerpt: meta.excerpt,
-    slug: meta.slug,
-    metaTitle: meta.seoTitle,
-    metaDescription: meta.seoDescription,
-    focusKeyword: (article.keyword ?? "").trim(),
     /*
-     * Every draft goes up hidden from search and with its links not followed.
-     * The author flips both when they publish by hand; until then a draft that
-     * leaks into an index is a duplicate of a post that does not exist yet.
+     * The client's mapping: meta description -> Yoast meta description AND the
+     * WordPress excerpt. Taking both from one value is what stops a live post
+     * showing two different summaries.
      */
-    robots: { noindex: true, nofollow: true },
-    categories: meta.categories,
+    excerpt: excerptFor(doc, meta.excerpt),
+    slug: doc.seo.slug,
+    metaTitle: doc.seo.seoTitle,
+    metaDescription: doc.seo.metaDescription,
+    focusKeyword: doc.seo.focusKeyword,
+    /*
+     * Index and follow. A draft with noindex/nofollow set "for safety" ships
+     * those Yoast flags onto the live post the moment the author hits Publish,
+     * and post-level nofollow would throw away every internal link. The author
+     * asked for both switches off.
+     */
+    robots: { noindex: false, nofollow: false },
+    /*
+     * Primary first: the connector writes categories[0] as Yoast's primary
+     * category. `doc.categories` is built that way deliberately rather than
+     * relying on whatever order the array happened to be stored in.
+     */
+    categories: doc.categories,
     tags: meta.tags,
     ...(recipe === null ? {} : { recipe }),
     // Deliberately no featuredMedia: images are the client's own workflow.
@@ -308,6 +338,8 @@ export type ExportResult = {
   plan: ExportPlan;
   /** What the site says it did with the WP Recipe Maker card. */
   recipe: WpRecipeReport;
+  /** Yoast fields as stored on the site, when the connector returns them. */
+  seo: WpSeoReport | null;
 };
 
 /**
@@ -378,6 +410,26 @@ export type ExportRecord = {
   recipeNote: string;
 };
 
+/**
+ * Compares what we sent with what WordPress stored.
+ *
+ * The plugin returns Yoast and WPRM as actually written. A silent mismatch
+ * used to look like a successful export while focus keyword, robots flags
+ * or the recipe card never landed.
+ */
+export function exportReadbackMismatch(result: ExportResult): boolean {
+  const sent = result.plan.payload;
+  const seo = result.seo;
+  if (seo !== null) {
+    if (sent.focusKeyword && seo.focusKeyword.toLowerCase() !== sent.focusKeyword.toLowerCase()) {
+      return true;
+    }
+    if (seo.noindex === true || seo.nofollow === true) return true;
+  }
+  if (sent.recipe !== undefined && result.recipe.recipeId <= 0) return true;
+  return false;
+}
+
 export function toExportRecord(
   result: ExportResult,
 ): ExportRecord {
@@ -397,7 +449,7 @@ export function toExportRecord(
     unresolvedInternal: plan.links.internalUnresolved,
     unmappedSections: plan.mapping.unmapped,
     imagesSkipped: plan.mapping.localImagesSkipped,
-    needsReview: plan.mapping.needsReview,
+    needsReview: plan.mapping.needsReview || exportReadbackMismatch(result),
     categories: plan.payload.categories ?? [],
     tags: plan.payload.tags ?? [],
     focusKeyword: plan.payload.focusKeyword ?? "",

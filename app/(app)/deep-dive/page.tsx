@@ -26,7 +26,7 @@ export default async function DeepDivePage({ searchParams }: Props) {
         </div>
         {provider.isMock ? (
           <Badge variant="warning">
-            Sample SERP data — add SERPAPI_KEY for live analysis
+            Sample SERP data — add DataForSEO credentials for live analysis
           </Badge>
         ) : (
           <Badge variant="success">Live autocomplete</Badge>

@@ -39,7 +39,7 @@ simply useful. Bold headings use Title Case.
 
   forbidden: [
     "Writing the entries as a bulleted or numbered list.",
-    "Any testing claim beyond the site's existing wording - no counts, no countries, no names, no 'from Berlin to Portland'.",
+    "Any testing claim beyond the site's existing wording. The published line is 'over 1,000 home cooks' / 'a global team of testers'. No extra counts, no cities, no 'from Berlin to Portland'.",
     "Health or nutrition claims of any kind.",
     "A heading that would fit any recipe: Easy, Delicious, Quick, Family Favourite.",
     "Reusing an emoji within the section.",
@@ -49,7 +49,7 @@ simply useful. Bold headings use Title Case.
     "🧀 **There Is a Whole Queso Layer In This Thing:** Not messing around with some measly shreds of Daiya sprinkled on top like a Godforsaken afterthought. Yep. There's an entire layer of vegan queso between the chili and the cornbread. You will be sincerely psyched.",
     "✊ **Vegan AF (and Eeeasily GF):** Not a single animal's been harmed (though several HAVE been snuggled) in the making of any of my vegan Tex-Mex recipes. Swap the flour in the cornbread topping for your fave gluten-free option, use a GF chili, and you can even love this if you hate gluten with all of your heart and soul.",
     "🍽️ **1 Pan. That's It. 1:** Everything bakes in a single 9 x 13-inch (23 x 33 cm) dish. I've made recipes that required 7 separate pots and I am forever sorry about that. This is not one of those recipes.",
-    "✅ **Tested and Approved Worldwide:** Every vegan recipe I share survives a full global taste test from a global team of recipe testers before it gets posted. Think of it as a very delicious job interview, and this one got the job.",
+    "✅ **Tested and Approved Worldwide:** Every vegan recipe I share survives a full global taste test from over 1,000 home cooks before it gets posted. Think of it as a very delicious job interview, and this one got the job.",
   ],
 
   checklist: [

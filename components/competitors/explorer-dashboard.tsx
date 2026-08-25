@@ -5,12 +5,9 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { CompetitorsModal } from "@/components/competitors/competitors-modal";
+import { AnchorsDonut } from "@/components/competitors/anchors-donut";
 import { CardAction } from "@/components/competitors/card-action";
 import { DomainGauge } from "@/components/competitors/domain-gauge";
-import {
-  ExplorerPreviewModal,
-  type PreviewKind,
-} from "@/components/competitors/explorer-preview-modal";
 import { OverviewChart } from "@/components/competitors/overview-chart";
 import { ScorePill } from "@/components/difficulty";
 import type { ExplorerReport } from "@/lib/competitors";
@@ -59,14 +56,8 @@ export function ExplorerDashboard({
   overview: DomainOverview;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [preview, setPreview] = useState<PreviewKind | null>(null);
   const [chartTab, setChartTab] = useState<"backlinks" | "traffic">(
     "backlinks",
-  );
-
-  const maxDist = Math.max(
-    1,
-    ...report.rankingDistribution.map((b) => b.count),
   );
 
   const traffic = overview.traffic;
@@ -113,13 +104,19 @@ export function ExplorerDashboard({
               {report.competitionLabel}
             </p>
             <p className="rounded bg-success/15 px-1.5 py-0.5 text-[11px] font-bold text-success">
-              {report.competitionScore}
+              {tipTarget}
             </p>
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div className="relative mt-2 h-2.5 w-full overflow-visible rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-success transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-success to-success/70 transition-all"
               style={{ width: `${String(scorePct)}%` }}
+            />
+            <span
+              className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-success bg-card shadow-sm"
+              style={{ left: `${String(Math.min(100, tipTarget))}%` }}
+              title={`Target ${String(tipTarget)}`}
+              aria-hidden
             />
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
@@ -130,9 +127,7 @@ export function ExplorerDashboard({
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-sm font-bold">Backlinks</h3>
             <CardAction
-              onClick={() => {
-                setPreview("backlinks");
-              }}
+              href={`/backlinks?domain=${encodeURIComponent(report.domain)}`}
             >
               View Backlinks
             </CardAction>
@@ -175,9 +170,7 @@ export function ExplorerDashboard({
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-sm font-bold">Referring Domains</h3>
             <CardAction
-              onClick={() => {
-                setPreview("domains");
-              }}
+              href={`/backlinks?domain=${encodeURIComponent(report.domain)}`}
             >
               View Domains
             </CardAction>
@@ -313,17 +306,13 @@ export function ExplorerDashboard({
 
             <CardFooter>
               <CardAction
-                onClick={() => {
-                  setPreview("pages");
-                }}
+                href={`/organic-keywords?domain=${encodeURIComponent(report.domain)}`}
               >
                 View Top Pages
               </CardAction>
               <CardAction
                 variant="solid"
-                onClick={() => {
-                  setPreview("keywords");
-                }}
+                href={`/organic-keywords?domain=${encodeURIComponent(report.domain)}`}
               >
                 View Keywords
               </CardAction>
@@ -332,11 +321,9 @@ export function ExplorerDashboard({
 
           {/* Top Competitors preview */}
           <Card>
-            <div className="border-b border-border px-4 py-3">
+            <div className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-bold">Top Competitors</h3>
-              <p className="text-[11px] text-muted-foreground">
-                Found in SERPS
-              </p>
+              <p className="text-[11px] text-muted-foreground">Found in SERPS</p>
             </div>
             <div className="min-w-0 flex-1 overflow-x-auto">
               <table className="w-full min-w-[20rem] text-[12px]">
@@ -411,28 +398,52 @@ export function ExplorerDashboard({
 
           {/* Ranking distribution */}
           <Card className="p-4">
-            <h3 className="text-sm font-bold">Ranking Distribution</h3>
-            <p className="text-[11px] text-muted-foreground">Top 100 Split</p>
-            <div className="mt-4 flex items-end gap-2" style={{ height: 100 }}>
-              {report.rankingDistribution.map((b) => (
-                <div
-                  key={b.band}
-                  className="flex flex-1 flex-col items-center gap-1"
-                >
-                  <span className="tabular text-[10px] font-medium text-muted-foreground">
-                    {b.count}
-                  </span>
-                  <div
-                    className="w-full rounded-t bg-gradient-to-t from-primary to-indigo-400"
-                    style={{
-                      height: `${String(Math.max(6, (b.count / maxDist) * 80))}px`,
-                    }}
-                  />
-                  <span className="text-[10px] text-muted-foreground">
-                    {b.band}
-                  </span>
-                </div>
-              ))}
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-bold">Ranking Distribution</h3>
+              <p className="text-[11px] text-muted-foreground">Top 100 Split</p>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <div
+                className="flex shrink-0 flex-col justify-between py-1 text-right text-[10px] tabular text-muted-foreground"
+                style={{ height: 120 }}
+                aria-hidden
+              >
+                <span>100%</span>
+                <span>50%</span>
+                <span>0%</span>
+              </div>
+              <div
+                className="flex min-w-0 flex-1 items-end gap-1.5"
+                style={{ height: 120 }}
+              >
+                {report.rankingDistribution.map((b) => {
+                  const total = report.rankingDistribution.reduce(
+                    (s, x) => s + x.count,
+                    0,
+                  );
+                  const pct = total === 0 ? 0 : (b.count / total) * 100;
+                  return (
+                    <div
+                      key={b.band}
+                      className="flex flex-1 flex-col items-center justify-end gap-1"
+                    >
+                      <span className="tabular text-[9px] font-medium text-muted-foreground">
+                        {b.count > 0 ? `${Math.round(pct)}%` : ""}
+                      </span>
+                      <div
+                        className="w-full max-w-[2rem] rounded-t bg-gradient-to-t from-primary via-indigo-500 to-violet-400"
+                        style={{
+                          height: `${String(Math.max(b.count > 0 ? 8 : 2, (pct / 100) * 96))}px`,
+                        }}
+                        title={`${b.band}: ${String(b.count)}`}
+                      />
+                      <span className="text-[9px] text-muted-foreground">
+                        {b.band}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </Card>
         </div>
@@ -506,7 +517,7 @@ export function ExplorerDashboard({
           </Card>
 
           <Card>
-            <div className="border-b border-border px-4 py-3">
+            <div className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-bold">Top DS Referring Domains</h3>
               <p className="text-[11px] text-muted-foreground">
                 Top Linking Domains By DS
@@ -517,11 +528,12 @@ export function ExplorerDashboard({
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] text-muted-foreground">
                     <th className="px-3 py-2 font-semibold">Site</th>
+                    <th className="px-2 py-2 text-right font-semibold">DS</th>
                     <th className="px-2 py-2 text-right font-semibold">
-                      Authority
+                      Links
                     </th>
                     <th className="px-3 py-2 text-right font-semibold">
-                      Links
+                      Domains
                     </th>
                   </tr>
                 </thead>
@@ -542,7 +554,15 @@ export function ExplorerDashboard({
                         </a>
                       </td>
                       <td className="tabular px-2 py-2 text-right">
-                        {d.authority === null ? "—" : String(d.authority)}
+                        {d.authority === null
+                          ? "—"
+                          : (d.authority > 10
+                              ? d.authority / 10
+                              : d.authority
+                            ).toFixed(1)}
+                      </td>
+                      <td className="tabular px-2 py-2 text-right">
+                        {formatNumber(d.hosts)}
                       </td>
                       <td className="tabular px-3 py-2 text-right">
                         {formatNumber(d.hosts)}
@@ -552,7 +572,7 @@ export function ExplorerDashboard({
                   {report.topLinkingDomains.length === 0 && (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-3 py-6 text-center text-muted-foreground"
                       >
                         No citing pages could be read for this domain.
@@ -565,6 +585,7 @@ export function ExplorerDashboard({
             {report.topLinkingDomains.length > 0 && (
               <CardFooter>
                 <CardAction
+                  variant="solid"
                   href={`/backlinks?domain=${encodeURIComponent(report.domain)}`}
                 >
                   View More
@@ -573,13 +594,6 @@ export function ExplorerDashboard({
             )}
           </Card>
 
-          {/*
-            Anchor text read from the citing pages themselves, rather than from
-            a backlink index. Google names pages that reference the domain; a
-            page's outbound anchors are readable by anyone who fetches it. Real
-            words from real pages — across the sample Google returned, which is
-            what the footnote says.
-          */}
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-bold">Top Anchors</h3>
@@ -601,43 +615,30 @@ export function ExplorerDashboard({
               </p>
             ) : (
               <>
-                <ul className="divide-y divide-border/60">
-                  {report.topAnchors.map((a) => {
-                    const total = report.topAnchors.reduce(
-                      (sum, x) => sum + x.count,
-                      0,
-                    );
-                    const pct = total === 0 ? 0 : (a.count / total) * 100;
-                    return (
-                      <li key={a.text} className="px-4 py-2">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span
-                            className="min-w-0 truncate text-[12px]"
-                            title={a.text}
-                          >
-                            {a.text}
-                          </span>
-                          <span className="tabular shrink-0 text-[11px] text-muted-foreground">
-                            {a.count} · {pct.toFixed(0)}%
-                          </span>
-                        </div>
-                        <span
-                          className="mt-1 block h-1 rounded-full bg-primary"
-                          style={{ width: `${String(Math.max(2, pct))}%` }}
-                          aria-hidden
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="px-4 pb-3 pt-2 text-[10px] text-muted-foreground">
+                <AnchorsDonut items={report.topAnchors} />
+                <p className="px-4 pb-2 text-[10px] text-muted-foreground">
                   Read from {report.citationsRead} citing page
-                  {report.citationsRead === 1 ? "" : "s"} that Google returned —
-                  a real sample of the link profile, not all of it.
+                  {report.citationsRead === 1 ? "" : "s"} — a real sample of the
+                  link profile, not all of it.
                 </p>
+                <CardFooter>
+                  <CardAction
+                    variant="solid"
+                    href={`/backlinks?domain=${encodeURIComponent(report.domain)}`}
+                  >
+                    View Anchors
+                  </CardAction>
+                </CardFooter>
               </>
             )}
           </Card>
+
+          {/*
+            Fills the right column under Top Anchors. Purely derived from the
+            report already on screen — no extra provider spend — so the author
+            can jump straight into the next research action.
+          */}
+          <ResearchNextCard report={report} />
         </div>
       </div>
 
@@ -649,21 +650,146 @@ export function ExplorerDashboard({
         domain={report.domain}
         rows={report.competitors}
       />
-
-      <ExplorerPreviewModal
-        open={preview !== null}
-        onClose={() => {
-          setPreview(null);
-        }}
-        kind={preview ?? "keywords"}
-        domain={report.domain}
-        keywords={report.organicPreview}
-        competitors={report.referringPreview}
-        backlinks={report.backlinks}
-
-        referringDomains={report.referringDomains}
-        citingPages={report.citingPages}
-      />
     </>
+  );
+}
+
+/**
+ * Actionable research panel for Competitive Analysis.
+ *
+ * Picks the easiest keywords on this domain and the strongest SERP rivals,
+ * then links into Keyword Research, Difficulty, Deep Dive and Competitor Gap.
+ */
+function ResearchNextCard({ report }: { report: ExplorerReport }) {
+  const easyWins = [...report.organicPreview]
+    .filter((k) => k.difficulty <= 45)
+    .sort((a, b) => a.difficulty - b.difficulty || b.volume - a.volume)
+    .slice(0, 5);
+
+  const rivals = report.competitors.slice(0, 4);
+  const inTop10 = report.rankingDistribution
+    .filter((b) => b.band === "1-3" || b.band === "4-10")
+    .reduce((s, b) => s + b.count, 0);
+  const rankedTotal = report.rankingDistribution.reduce((s, b) => s + b.count, 0);
+
+  return (
+    <Card>
+      <div className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
+        <h3 className="text-sm font-bold">Research Next</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Built from this report
+        </p>
+      </div>
+
+      <div className="space-y-4 px-4 py-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Snapshot
+          </p>
+          <ul className="mt-1.5 space-y-1 text-[12px] text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">
+                {formatNumber(report.organicCount)}
+              </span>{" "}
+              organic keywords · est. traffic{" "}
+              <span className="font-medium text-foreground">
+                {formatNumber(report.estimatedTraffic)}
+              </span>
+            </li>
+            <li>
+              Competition{" "}
+              <span className="font-medium text-foreground">
+                {report.competitionScore}
+              </span>{" "}
+              ({report.competitionLabel.replace(/^Competition\s+/i, "")})
+              {rankedTotal > 0 && (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="font-medium text-foreground">
+                    {String(inTop10)}
+                  </span>{" "}
+                  of {String(rankedTotal)} ranked in top 10
+                </>
+              )}
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Easiest keywords to research
+          </p>
+          {easyWins.length === 0 ? (
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              No lower-difficulty keywords in this preview yet. Open the full
+              keyword list to dig further.
+            </p>
+          ) : (
+            <ul className="mt-1.5 divide-y divide-border/60">
+              {easyWins.map((k) => (
+                <li
+                  key={k.keyword}
+                  className="flex items-center gap-2 py-1.5 text-[12px]"
+                >
+                  <Link
+                    href={`/keywords?q=${encodeURIComponent(k.keyword)}`}
+                    className="min-w-0 flex-1 truncate font-medium hover:text-primary hover:underline"
+                    title={k.keyword}
+                  >
+                    {k.keyword}
+                  </Link>
+                  <ScorePill score={k.difficulty} />
+                  <Link
+                    href={`/difficulty?q=${encodeURIComponent(k.keyword)}`}
+                    className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
+                  >
+                    Check
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Gap-check these rivals
+          </p>
+          {rivals.length === 0 ? (
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              No SERP competitors cached yet. Research a few keywords first.
+            </p>
+          ) : (
+            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+              {rivals.map((c) => (
+                <Link
+                  key={c.site}
+                  href={`/competitor-gap?them=${encodeURIComponent(c.site)}&you=${encodeURIComponent(report.domain)}`}
+                  className="rounded-md border border-border bg-muted/30 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/5"
+                >
+                  {c.site}
+                  {c.ds !== null ? ` · DS ${c.ds.toFixed(1)}` : ""}
+                </Link>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <CardFooter>
+        <CardAction
+          href={`/deep-dive?q=${encodeURIComponent(easyWins[0]?.keyword ?? report.organicPreview[0]?.keyword ?? report.domain)}`}
+        >
+          Deep Dive
+        </CardAction>
+        <CardAction
+          variant="solid"
+          href={`/competitor-gap?them=${encodeURIComponent(rivals[0]?.site ?? "")}&you=${encodeURIComponent(report.domain)}`}
+        >
+          Competitor Gap
+        </CardAction>
+      </CardFooter>
+    </Card>
   );
 }

@@ -18,7 +18,7 @@ export default async function EditorLayout({
   if (!session) redirect("/login");
 
   return (
-    <div className="h-svh max-h-svh w-full overflow-hidden bg-white">
+    <div className="h-svh max-h-svh w-full overflow-hidden bg-background">
       {children}
     </div>
   );

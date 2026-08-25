@@ -41,4 +41,9 @@ next-env.d.ts
 .promptsize-*
 .strogscore-*
 .strogcmp-*
+.benchmark-*
+.exportfields-*
+.fsdbtest-*
+.stylegap-*
+.zipcheck-*
 poll-tmp.mjs

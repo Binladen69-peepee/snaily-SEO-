@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ARTICLE_STATUSES,
@@ -46,6 +47,7 @@ import {
   type ArticleStatus,
   type DraftComment,
 } from "@/lib/articles";
+import { researchPanelSummary } from "@/lib/drafter/research";
 import {
   analyseTitle,
   checkTerms,
@@ -74,6 +76,7 @@ import {
 import { OutlinePanel } from "@/components/articles/outline-panel";
 import { QualityPanel } from "@/components/articles/quality-panel";
 import { RecipePanel } from "@/components/articles/recipe-panel";
+import { TermSelect, type SiteTermOption } from "@/components/articles/term-select";
 import {
   hasRecipe,
   validateRecipe,
@@ -116,6 +119,8 @@ export function ArticleEditor({
   wpHealth: initialWpHealth,
   hasDrive,
   driveFolderId,
+  siteCategories,
+  siteTags,
 }: {
   article: {
     id: string;
@@ -143,6 +148,8 @@ export function ArticleEditor({
   wpHealth: WordpressHealth;
   hasDrive: boolean;
   driveFolderId: string;
+  siteCategories: SiteTermOption[];
+  siteTags: SiteTermOption[];
 }) {
   const isDrafter = article.mode === "drafter";
   const router = useRouter();
@@ -274,13 +281,18 @@ export function ArticleEditor({
       analyseTitle(
         title,
         article.keyword,
-        (brief?.terms ?? [])
-          .filter((t) => t.size === 1)
-          .map((t) => t.term)
-          .slice(0, 10),
+        (brief?.titleWords?.length
+          ? brief.titleWords
+          : (brief?.research?.titleTerms ?? []).map((t) => t.term)
+        ).slice(0, 12),
         brief?.terms ?? [],
       ),
     [title, article.keyword, brief],
+  );
+
+  const searchResearch = useMemo(
+    () => researchPanelSummary(brief?.research ?? null),
+    [brief],
   );
 
   const save = useCallback(
@@ -640,9 +652,9 @@ ${htmlBody}
   }
 
   return (
-    <div className="flex h-svh max-h-svh flex-col overflow-hidden bg-white">
+    <div className="flex h-svh max-h-svh flex-col overflow-hidden bg-background">
       {/* Gutenberg-style document toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-white px-2 py-1.5 sm:px-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-background px-2 py-1.5 sm:px-3">
         <Link
           href="/content-assistant"
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -853,17 +865,17 @@ ${htmlBody}
 
       <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
         {/* ================= Canvas ================= */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {view === "preview" ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="mx-auto w-full max-w-[42rem] px-5 pt-6 pb-16 sm:px-8">
                 <h1
-                  className="mb-3 text-center text-3xl font-extrabold leading-[1.15] tracking-tight sm:text-4xl"
+                  className="mb-3 text-center text-3xl font-extrabold leading-[1.15] tracking-tight text-foreground sm:text-4xl"
                   style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}
                 >
                   {title.trim() || "Add title"}
                 </h1>
-                <article className="cs-preview bg-white">
+                <article className="cs-preview">
                   <div
                     className="cs-post"
                     dangerouslySetInnerHTML={{
@@ -911,7 +923,12 @@ ${htmlBody}
                     }}
                     aria-label="Post title"
                     placeholder="Add title"
-                    className="mb-2 w-full bg-transparent text-left text-3xl font-extrabold leading-[1.15] tracking-tight text-foreground placeholder:text-muted-foreground/40 focus:outline-none sm:text-4xl"
+                    className={cn(
+                      "mb-2 w-full bg-transparent text-left text-3xl font-extrabold leading-[1.15] tracking-tight placeholder:text-muted-foreground/40 focus:outline-none sm:text-4xl",
+                      titleAnalysis.lengthState === "long"
+                        ? "text-destructive"
+                        : "text-foreground",
+                    )}
                     style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}
                   />
                   {blocks.length > 0 && (
@@ -978,7 +995,7 @@ ${htmlBody}
             />
           )}
 
-          <div className="z-20 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-white/95 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur">
+          <div className="z-20 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-background/95 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur">
             <span className="tabular">{words.toLocaleString("en-US")} words</span>
             <span>{minutes} min read</span>
             <span>SEO {optimization.percent}%</span>
@@ -1035,22 +1052,21 @@ ${htmlBody}
                 </p>
               </div>
 
-              <select
-                value={status === "preparing" ? "draft" : status}
-                onChange={(e) => {
-                  const next = e.target.value as ArticleStatus;
-                  setStatus(next);
-                  void save({ status: next });
-                }}
+              <SearchableSelect
+                size="sm"
+                className="w-[8.5rem] shrink-0"
                 aria-label="Article status"
-                className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
+                value={status === "preparing" ? "draft" : status}
+                options={ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => ({
+                  value: s,
+                  label: STATUS_LABEL[s],
+                }))}
+                onChange={(next) => {
+                  const value = next as ArticleStatus;
+                  setStatus(value);
+                  void save({ status: value });
+                }}
+              />
             </div>
 
             <div className="flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
@@ -1123,6 +1139,52 @@ ${htmlBody}
               </div>
             )}
 
+            {!researching && brief !== null && (
+              <div className="border-b border-border px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Search Research
+                  </p>
+                  <p className="text-xs font-medium">
+                    {searchResearch.providerLabel}
+                    {searchResearch.available ? " ✓" : ""}
+                    {searchResearch.cacheHit ? " · cached" : ""}
+                  </p>
+                </div>
+                {searchResearch.available ? (
+                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Top results</dt>
+                      <dd className="tabular font-medium">
+                        {searchResearch.topResults}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">PAA questions</dt>
+                      <dd className="tabular font-medium">{searchResearch.paa}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">SERP features</dt>
+                      <dd className="tabular font-medium">
+                        {searchResearch.serpFeatures}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Related searches</dt>
+                      <dd className="tabular font-medium">
+                        {searchResearch.relatedSearches}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Search research unavailable — drafting continues without
+                    fabricated SERP data.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="min-h-0 flex-1 xl:overflow-y-auto">
               {tab === "seo" && (
                 <div className="p-3">
@@ -1178,7 +1240,9 @@ ${htmlBody}
                           "h-full rounded-full transition-all",
                           titleAnalysis.lengthState === "ok"
                             ? "bg-success"
-                            : "bg-primary",
+                            : titleAnalysis.lengthState === "long"
+                              ? "bg-destructive"
+                              : "bg-primary",
                         )}
                         style={{
                           width: `${String(Math.min(100, (titleAnalysis.length / TITLE_MAX) * 100))}%`,
@@ -1253,7 +1317,12 @@ ${htmlBody}
                           setMeta((m) => ({ ...m, seoTitle: e.target.value }));
                         }}
                         maxLength={200}
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        className={cn(
+                          "mt-1 h-8 w-full rounded-md border bg-background px-2 text-sm",
+                          meta.seoTitle.length > 60
+                            ? "border-destructive text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+                            : "border-input",
+                        )}
                       />
                       <span
                         className={cn(
@@ -1502,24 +1571,23 @@ ${htmlBody}
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <label className="block text-xs font-medium">
-                      Status
-                      <select
+                    <div>
+                      <p className="mb-1 text-xs font-medium">Status</p>
+                      <SearchableSelect
+                        size="sm"
+                        aria-label="Status"
                         value={status === "preparing" ? "draft" : status}
-                        onChange={(e) => {
-                          const next = e.target.value as ArticleStatus;
-                          setStatus(next);
-                          void save({ status: next });
+                        options={ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => ({
+                          value: s,
+                          label: STATUS_LABEL[s],
+                        }))}
+                        onChange={(next) => {
+                          const value = next as ArticleStatus;
+                          setStatus(value);
+                          void save({ status: value });
                         }}
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => (
-                          <option key={s} value={s}>
-                            {STATUS_LABEL[s]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                      />
+                    </div>
                     <label className="block text-xs font-medium">
                       Slug
                       <input
@@ -1541,38 +1609,26 @@ ${htmlBody}
                         className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
                       />
                     </label>
-                    <label className="block text-xs font-medium">
-                      Categories (comma separated)
-                      <input
-                        value={meta.categories.join(", ")}
-                        onChange={(e) => {
-                          setMeta((m) => ({
-                            ...m,
-                            categories: e.target.value
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          }));
-                        }}
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                      />
-                    </label>
-                    <label className="block text-xs font-medium">
-                      Tags (comma separated)
-                      <input
-                        value={meta.tags.join(", ")}
-                        onChange={(e) => {
-                          setMeta((m) => ({
-                            ...m,
-                            tags: e.target.value
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          }));
-                        }}
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                      />
-                    </label>
+                    <TermSelect
+                      id="post-categories"
+                      label="Categories"
+                      value={meta.categories}
+                      terms={siteCategories}
+                      emptyHint="Sync WordPress to pick live categories"
+                      onChange={(categories) => {
+                        setMeta((m) => ({ ...m, categories }));
+                      }}
+                    />
+                    <TermSelect
+                      id="post-tags"
+                      label="Tags"
+                      value={meta.tags}
+                      terms={siteTags}
+                      emptyHint="Sync WordPress to pick live tags"
+                      onChange={(tags) => {
+                        setMeta((m) => ({ ...m, tags }));
+                      }}
+                    />
                     <label className="block text-xs font-medium">
                       Featured image
                       <input

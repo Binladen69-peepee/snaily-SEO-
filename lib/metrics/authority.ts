@@ -1,6 +1,12 @@
+import {
+  DATAFORSEO_RANK_LABEL,
+  dataForSeoConfigured,
+  getCachedDataForSeoRanks,
+} from "@/lib/dataforseo";
 import { prisma } from "@/lib/db";
 import {
   derived,
+  real,
   unavailable,
   type Measured,
 } from "@/lib/metrics/provenance";
@@ -19,30 +25,19 @@ import {
 } from "@/lib/metrics/visibility";
 
 /**
- * Snaily Domain Authority and Trust.
+ * Domain Authority and Trust.
  *
- * These are our own metrics, not Moz's. They are not calibrated against DA and
- * will not match it number for number; the goal is that the *ordering* is
- * sensible — wikipedia.org above allrecipes.com above a local caterer — and
- * that every point is traceable to something real.
+ * Preferred source when configured: DataForSEO Rank (0–100) from the
+ * Backlinks API. That is a provider-backed backlink-index rank — not Moz DA.
  *
- * The formula is published in the UI beside the score. Four signals, each
- * genuinely observed:
+ * Fallback (when DataForSEO is missing or fails): Snaily Domain Authority —
+ * our own composite, also not Moz DA:
  *
  *   55%  OpenPageRank   PageRank over the Common Crawl link graph
  *   30%  SERP presence  how often Google ranks it, in SERPs we already hold
  *   15%  Domain age     RDAP registration date
  *
- * A fourth signal — Common Crawl's indexed page count — was built and then
- * removed. Its cheap endpoint (`showNumPages`) returns a `blocks` figure of
- * 0–4 with almost no discrimination: measured live, nytimes.com returned 0
- * while cinnamonsnail.com returned 1, which would have ranked a small site
- * above the New York Times on "size". Real counts need per-domain pagination
- * over capture records, which is far too many requests to justify. A signal
- * that looks meaningful but is not is worse than no signal.
- *
- * Missing signals are not treated as zero — that would punish a strong domain
- * for a failed API call. Instead the weights of the signals we *do* have are
+ * Missing signals are not treated as zero. Weights of available signals are
  * renormalised, and the count is reported so the UI can show confidence.
  */
 
@@ -79,20 +74,24 @@ function logScale(value: number, ceiling: number): number {
 
 export type ScoreTerm = { label: string; detail: string; weight: number; contribution: number };
 
+export type AuthoritySource = "dataforseo" | "snaily" | "unavailable";
+
 export type DomainAuthority = {
   domain: string;
   score: Measured;
   trust: Measured;
   terms: ScoreTerm[];
-  /** How many of the four signals were available. */
+  /** How many of the signals were available. */
   signalCount: number;
-  /** Common Crawl PageRank 0–10, used to derive link counts. */
+  /** Common Crawl PageRank 0–10, used to derive link counts when needed. */
   openPageRank: number | null;
   /**
-   * Measured count of linking domains from the OpenPageRank webgraph.
-   * When present this is REAL and replaces the modelled estimate entirely.
+   * Measured count of linking domains (DataForSEO summary or OpenPageRank
+   * webgraph). When present this is REAL and replaces the modelled estimate.
    */
   referringDomains: number | null;
+  /** Which provider produced the primary domain score. */
+  source: AuthoritySource;
 };
 
 /**
@@ -179,6 +178,7 @@ export function scoreDomain(
       signalCount: 0,
       openPageRank: resolved.openPageRank,
       referringDomains: measuredReferringDomains,
+      source: "unavailable",
     };
   }
 
@@ -209,9 +209,10 @@ export function scoreDomain(
     signalCount: terms.length,
     openPageRank: resolved.openPageRank,
     referringDomains: measuredReferringDomains,
+    source: "snaily",
     score: derived(
       score,
-      `Snaily Domain Authority — a 0–100 score from ${String(terms.length)} of 3 free signals. Not Moz DA; the ordering is comparable, the numbers are not.`,
+      `Snaily Domain Authority — a 0–100 score from ${String(terms.length)} of 3 free signals. Not Moz DA; fallback when DataForSEO is unavailable.`,
       terms.map((t) => ({
         label: t.label,
         detail: t.detail,
@@ -222,6 +223,37 @@ export function scoreDomain(
       trust === null
         ? unavailable("Not enough signals to judge how established this domain is.")
         : derived(trust, "Snaily Trust — how established and stable the domain looks, from age, link-graph standing and ranking consistency."),
+  };
+}
+
+/** Build a DomainAuthority row from a DataForSEO Rank value. */
+export function authorityFromDataForSeo(
+  domain: string,
+  rank: number,
+  referringDomains: number | null = null,
+): DomainAuthority {
+  return {
+    domain,
+    source: "dataforseo",
+    signalCount: 1,
+    openPageRank: null,
+    referringDomains,
+    terms: [
+      {
+        label: DATAFORSEO_RANK_LABEL,
+        detail: `Rank ${String(rank)} / 100 from DataForSEO Backlinks API`,
+        weight: 1,
+        contribution: rank,
+      },
+    ],
+    score: real(
+      rank,
+      `${DATAFORSEO_RANK_LABEL} — provider-backed 0–100 domain strength from DataForSEO. This is not Moz DA unless explicitly sourced from Moz.`,
+    ),
+    trust: real(
+      rank,
+      `${DATAFORSEO_RANK_LABEL} used as the trust signal when DataForSEO is connected.`,
+    ),
   };
 }
 
@@ -253,9 +285,9 @@ async function loadCached(domains: string[]) {
 /**
  * Authority for a set of domains — typically the ten on one SERP.
  *
- * Batched end to end: one OpenPageRank call covers up to 100 domains, and the
- * visibility index is built once for the whole set. Cached rows are reused for
- * a month, so a repeat search costs nothing at all.
+ * Prefer DataForSEO Rank when configured (one bulk call, weekly cache).
+ * Otherwise batch OpenPageRank + visibility + RDAP. Cached rows are reused
+ * so a repeat search costs nothing at all.
  */
 export async function getDomainAuthority(
   input: string[],
@@ -266,6 +298,41 @@ export async function getDomainAuthority(
     input.map((d) => d.replace(/^www\./, "").toLowerCase()).filter((d) => d !== ""),
   )];
 
+  const out = new Map<string, DomainAuthority>();
+  if (domains.length === 0) return out;
+
+  // Provider-backed path first — never fabricate ranks when DFS returns null.
+  if (dataForSeoConfigured()) {
+    try {
+      const dfs = await getCachedDataForSeoRanks(domains);
+      const missing: string[] = [];
+      for (const domain of domains) {
+        const row = dfs.get(domain);
+        if (row && row.rank != null) {
+          out.set(
+            domain,
+            authorityFromDataForSeo(domain, row.rank, row.referringDomains),
+          );
+        } else {
+          missing.push(domain);
+        }
+      }
+      if (missing.length === 0) return out;
+      // Fall through for domains DFS did not cover.
+      const fallback = await getSnailyDomainAuthority(missing);
+      for (const [domain, scored] of fallback) out.set(domain, scored);
+      return out;
+    } catch {
+      // Auth / outage → fall back to Snaily composite; label provenance stays honest.
+    }
+  }
+
+  return getSnailyDomainAuthority(domains);
+}
+
+async function getSnailyDomainAuthority(
+  domains: string[],
+): Promise<Map<string, DomainAuthority>> {
   const out = new Map<string, DomainAuthority>();
   if (domains.length === 0) return out;
 
@@ -338,6 +405,14 @@ export async function getDomainAuthority(
   // Cached rows are re-scored rather than read back verbatim: the visibility
   // term changes as the SERP corpus grows, even when the fetched signals have not.
   for (const [domain, row] of fresh) {
+    // Prefer a stored DataForSEO rank even on the Snaily path when present.
+    if (row.dataforseoRank != null) {
+      out.set(
+        domain,
+        authorityFromDataForSeo(domain, row.dataforseoRank, row.referringDomains),
+      );
+      continue;
+    }
     out.set(
       domain,
       scoreDomain(

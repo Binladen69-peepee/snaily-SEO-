@@ -8,7 +8,9 @@
  *
  *   npm run test:export-fields
  */
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { join } from "node:path";
 
 import { compile } from "./compile.mjs";
 
@@ -308,6 +310,15 @@ try {
   check(
     CONNECTOR_DOWNLOAD_PATH === "/api/wordpress/plugin",
     "both screens download from the one route",
+  );
+
+  const exportSrc = readFileSync(
+    join(process.cwd(), "lib/wordpress/draft-export.ts"),
+    "utf8",
+  );
+  check(
+    /robots:\s*\{\s*noindex:\s*false,\s*nofollow:\s*false\s*\}/.test(exportSrc),
+    "drafts are sent with Yoast noindex and nofollow off",
   );
 
   const dupes = resolveCategories(

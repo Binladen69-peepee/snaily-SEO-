@@ -19,6 +19,7 @@ export type SerpMetricKey =
 
 export const SERP_METRIC_LABEL: Record<SerpMetricKey, string> = {
   pageAuthority: "PA",
+  /** Short label kept for layout; tooltip clarifies DataForSEO Rank vs Snaily. */
   domainAuthority: "DA",
   pageLinkingDomains: "Doms",
   domainLinkingDomains: "DomsD",
@@ -27,12 +28,17 @@ export const SERP_METRIC_LABEL: Record<SerpMetricKey, string> = {
 };
 
 export const SERP_METRIC_TITLE: Record<SerpMetricKey, string> = {
-  pageAuthority: "Page Authority — strength of the individual ranking page",
-  domainAuthority: "Domain Authority — strength of the whole site",
-  pageLinkingDomains: "Domains linking to the ranking page (from Common Crawl PageRank)",
-  domainLinkingDomains: "Domains linking to the whole site (from Common Crawl PageRank)",
+  pageAuthority:
+    "Page strength — estimated from domain Rank/Authority and SERP position. Not Moz PA.",
+  domainAuthority:
+    "Domain strength — DataForSEO Rank when connected, otherwise Snaily Domain Authority. Authority metric supplied by DataForSEO is not Moz DA unless explicitly sourced from Moz.",
+  pageLinkingDomains:
+    "Domains linking to the ranking page (measured when DataForSEO/CrawlGraph supplies them; otherwise modelled from PageRank)",
+  domainLinkingDomains:
+    "Domains linking to the whole site (DataForSEO referring_domains when fetched; otherwise Common Crawl / modelled)",
   authority: "Trust signal for the site",
-  backlinks: "Inbound links to the ranking page (from Common Crawl PageRank)",
+  backlinks:
+    "Inbound links to the ranking page (DataForSEO when fetched; otherwise modelled from PageRank)",
 };
 
 export const SERP_METRIC_KEYS: SerpMetricKey[] = [

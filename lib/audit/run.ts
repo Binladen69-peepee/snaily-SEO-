@@ -54,7 +54,7 @@ export async function runAudit(
   maxPages: number,
 ) {
   try {
-    const { pages: fetched, brokenUrls } = await crawlSite({
+    const { pages: fetched, brokenUrls, blockedUrls } = await crawlSite({
       startUrl,
       maxPages,
       onProgress: async (crawled, found) => {
@@ -75,7 +75,13 @@ export async function runAudit(
 
     const pages: CrawledPage[] = fetched.map((p) => {
       const broken = p.internalLinks.filter((l) => brokenUrls.has(l));
-      const withLinks = { ...p, brokenLinks: broken, issues: [] };
+      const blocked = p.internalLinks.filter((l) => blockedUrls.has(l));
+      const withLinks = {
+        ...p,
+        brokenLinks: broken,
+        blockedLinks: blocked,
+        issues: [],
+      };
       return { ...withLinks, issues: runChecks(withLinks, ctx) };
     });
 
@@ -108,8 +114,11 @@ export async function runAudit(
           lastModified: p.lastModified !== null ? new Date(p.lastModified) : null,
           imagesTotal: p.imagesTotal,
           imagesMissingAlt: p.imagesMissingAlt,
+          imagesDecorative: p.imagesDecorative,
+          imagesChrome: p.imagesChrome,
           internalLinkCount: p.internalLinks.length,
           brokenLinks: p.brokenLinks,
+          blockedLinks: p.blockedLinks,
           issues: p.issues,
           issueCodes: p.issues.map((i: Issue) => i.code),
           issueScore: issueScore(p),

@@ -1,5 +1,12 @@
 import * as cheerio from "cheerio";
 
+import { auditImages } from "@/lib/audit/images";
+import {
+  classifyFailure,
+  classifyResponse,
+  shouldRetry,
+  type LinkOutcome,
+} from "@/lib/audit/link-status";
 import type { CrawledPage } from "@/lib/audit/types";
 
 export const CRAWL_DEFAULTS = {
@@ -8,6 +15,14 @@ export const CRAWL_DEFAULTS = {
   timeoutMs: 12_000,
   politenessMs: 200,
   userAgent: "SEOToolBot/1.0 (+content audit)",
+  /*
+   * Cloudflare answers the bot agent above with 429 on some hosts
+   * (cinnamonsnail.com among them), which the audit used to record as a broken
+   * page. The retry presents the same agent string a reader's browser would,
+   * so a block is confirmed as a real failure before anything is reported.
+   */
+  retryUserAgent:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 };
 
 /**
@@ -80,7 +95,10 @@ function isAllowed(pathname: string, disallow: string[]): boolean {
   return !disallow.some((rule) => pathname.startsWith(rule));
 }
 
-type FetchedPage = Omit<CrawledPage, "issues" | "brokenLinks">;
+type FetchedPage = Omit<
+  CrawledPage,
+  "issues" | "brokenLinks" | "blockedLinks"
+>;
 
 /** Fetches and parses one HTML page — used by the site audit and On-Page Analyzer. */
 export async function fetchSinglePage(url: string): Promise<FetchedPage> {
@@ -102,6 +120,13 @@ async function fetchPage(
   const empty: FetchedPage = {
     url,
     status: 0,
+    outcome: {
+      state: "timeout",
+      status: 0,
+      finalUrl: url,
+      redirected: false,
+      detail: "Not fetched",
+    },
     title: "",
     metaDescription: "",
     h1: [],
@@ -111,25 +136,59 @@ async function fetchPage(
     lastModified: null,
     imagesTotal: 0,
     imagesMissingAlt: 0,
+    imagesDecorative: 0,
+    imagesChrome: 0,
     internalLinks: [],
   };
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      signal,
-      redirect: "follow",
-      headers: { "User-Agent": CRAWL_DEFAULTS.userAgent },
-    });
-  } catch {
-    return { ...empty, status: 0 };
+  /*
+   * Two attempts at most: the first as the audit bot, and — only when the host
+   * blocked us or the request timed out — one more presenting a browser agent.
+   * A link is never reported on the strength of a single refused request.
+   */
+  const attempt = async (userAgent: string): Promise<Response | LinkOutcome> => {
+    try {
+      return await fetch(url, {
+        signal,
+        redirect: "follow",
+        headers: { "User-Agent": userAgent },
+      });
+    } catch (err) {
+      return classifyFailure(url, err);
+    }
+  };
+
+  let res = await attempt(CRAWL_DEFAULTS.userAgent);
+
+  let outcome: LinkOutcome =
+    res instanceof Response
+      ? classifyResponse(url, res.status, res.url)
+      : res;
+
+  if (shouldRetry(outcome) && !signal.aborted) {
+    const retried = await attempt(CRAWL_DEFAULTS.retryUserAgent);
+    const retryOutcome =
+      retried instanceof Response
+        ? classifyResponse(url, retried.status, retried.url)
+        : retried;
+    // Keep the better of the two: a retry that succeeded settles it.
+    if (retryOutcome.state === "valid" || retryOutcome.state === "redirect") {
+      res = retried;
+      outcome = retryOutcome;
+    } else {
+      outcome = retryOutcome;
+    }
+  }
+
+  if (!(res instanceof Response)) {
+    return { ...empty, status: outcome.status, outcome };
   }
 
   const contentType = res.headers.get("content-type") ?? "";
   const lastModified = res.headers.get("last-modified");
 
   if (!res.ok || !contentType.includes("text/html")) {
-    return { ...empty, status: res.status, lastModified };
+    return { ...empty, status: res.status, lastModified, outcome };
   }
 
   const html = await res.text();
@@ -145,11 +204,7 @@ async function fetchPage(
   const robotsMeta = ($("meta[name='robots']").attr("content") ?? "").toLowerCase();
   const text = $("body").text().replace(/\s+/g, " ").trim();
 
-  const images = $("img");
-  const missingAlt = images.filter((_, el) => {
-    const alt = $(el).attr("alt");
-    return alt === undefined || alt.trim() === "";
-  }).length;
+  const imageAudit = auditImages($);
 
   const base = new URL(res.url);
   const internalLinks = new Set<string>();
@@ -179,9 +234,12 @@ async function fetchPage(
     canonical: ($("link[rel='canonical']").attr("href") ?? "").trim(),
     indexable: !robotsMeta.includes("noindex"),
     lastModified,
-    imagesTotal: images.length,
-    imagesMissingAlt: missingAlt,
+    imagesTotal: imageAudit.total,
+    imagesMissingAlt: imageAudit.missingAlt,
+    imagesDecorative: imageAudit.decorative,
+    imagesChrome: imageAudit.chrome,
     internalLinks: [...internalLinks],
+    outcome,
   };
 }
 
@@ -193,8 +251,10 @@ export type CrawlOptions = {
 
 export type CrawlOutcome = {
   pages: FetchedPage[];
-  /** URLs that returned 4xx/5xx, used to flag broken internal links. */
+  /** URLs genuinely gone (404/410/5xx after retry). */
   brokenUrls: Set<string>;
+  /** URLs the host refused to serve us, or that timed out. Not broken. */
+  blockedUrls: Set<string>;
   /**
    * Distinct internal URLs seen, including any the page cap stopped us
    * fetching. Always >= pages.length.
@@ -237,13 +297,26 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
 
       const results = await Promise.all(
         batch.map(async (url) => {
+          /*
+           * This timeout used to abort `controller` — the crawl-wide signal.
+           * One page slower than 12s therefore aborted every request that came
+           * after it, each of which was recorded with status 0 and reported as
+           * a broken link. The signal is per page now, linked to the crawl
+           * signal only so a global stop still propagates.
+           */
+          const pageController = new AbortController();
+          const onAbort = () => {
+            pageController.abort();
+          };
+          controller.signal.addEventListener("abort", onAbort, { once: true });
           const pageTimer = setTimeout(() => {
-            controller.abort();
+            pageController.abort();
           }, CRAWL_DEFAULTS.timeoutMs);
           try {
-            return await fetchPage(url, controller.signal);
+            return await fetchPage(url, pageController.signal);
           } finally {
             clearTimeout(pageTimer);
+            controller.signal.removeEventListener("abort", onAbort);
           }
         }),
       );
@@ -268,12 +341,23 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
       await new Promise((r) => setTimeout(r, CRAWL_DEFAULTS.politenessMs));
     }
 
-    // Any crawled URL with a bad status is a broken target for links pointing at it.
+    /*
+     * Only a destination that genuinely is not there counts against the site.
+     * A page the host refused to serve the crawler (403/429), or one that timed
+     * out, says nothing about whether a reader can open the link — those are
+     * reported separately so the author can see them without being told their
+     * working links are broken.
+     */
     const brokenUrls = new Set(
-      pages.filter((p) => p.status === 0 || p.status >= 400).map((p) => p.url),
+      pages.filter((p) => p.outcome.state === "broken").map((p) => p.url),
+    );
+    const blockedUrls = new Set(
+      pages
+        .filter((p) => p.outcome.state === "blocked" || p.outcome.state === "timeout")
+        .map((p) => p.url),
     );
 
-    return { pages, brokenUrls, discovered: seen.size };
+    return { pages, brokenUrls, blockedUrls, discovered: seen.size };
   } finally {
     clearTimeout(timer);
   }

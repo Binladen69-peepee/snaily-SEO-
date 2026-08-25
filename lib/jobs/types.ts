@@ -9,6 +9,7 @@
 
 import type { QualityReport } from "@/lib/drafter/quality-gate";
 import type { ParsedRecipe } from "@/lib/drafter/recipe-paste";
+import type { DrafterResearch } from "@/lib/drafter/research";
 
 export const JOB_STATUSES = [
   "queued",
@@ -126,6 +127,11 @@ export type JobResearch = {
   /** Published posts on this site, for the internal-link stage to draw from. */
   internalPosts: { title: string; url: string }[];
   provenance: Provenance[];
+  /**
+   * Normalized search research (DataForSEO / SerpApi). Populated once;
+   * section writers consume slices — never call providers again.
+   */
+  drafter?: DrafterResearch;
 };
 
 export type OutlineSection = {

@@ -29,6 +29,7 @@ import {
   type SiteTerm,
 } from "@/lib/drafter/categories";
 import { factBuckets, styleContext } from "@/lib/drafter/context-buckets";
+import { providerDisplayName, researchSliceForSections } from "@/lib/drafter/research";
 import { briefFor } from "@/lib/drafter/voice";
 import type { WriterKey } from "@/lib/drafter/voice/types";
 import { formatIngredients, formatSteps } from "@/lib/drafter/recipe-paste";
@@ -77,17 +78,40 @@ function recipeSourceText(ctx: StageContext, ingredients: string[]): string {
   ].join(" ");
 }
 
-function factsForRewrite(ctx: StageContext): string {
+function factsForRewrite(ctx: StageContext, key?: SectionKey | null): string {
   const parsed = ctx.state.parsed;
   const research = ctx.state.research;
   if (parsed === undefined) return "";
+  const skipResearch = key === "how-to-make" || key === "tips";
+  const sliceKey =
+    key === "how-to-make"
+      ? "steps"
+      : key === "faqs"
+        ? "faq"
+        : (key ?? "intro");
+  const slice = skipResearch
+    ? {}
+    : researchSliceForSections(research?.drafter, [sliceKey], {
+        recipeText: [
+          ctx.article.title,
+          ctx.article.keyword,
+          ...parsed.ingredients,
+          ...parsed.steps,
+        ].join(" "),
+      });
   return factBuckets({
     title: ctx.article.title,
     keyword: ctx.article.keyword,
     ingredients: formatIngredients(parsed),
     steps: formatSteps(parsed),
-    terms: research?.terms,
-    questions: research?.questions,
+    terms: slice.terms,
+    questions: slice.questions,
+    intent: slice.intent,
+    titleTerms: slice.titleTerms,
+    researchNote: slice.note,
+    researchProvider: research?.drafter
+      ? providerDisplayName(research.drafter.provider)
+      : undefined,
     posts: research?.internalPosts.slice(0, 24),
   });
 }
@@ -213,6 +237,11 @@ export async function metadata(ctx: StageContext): Promise<StageResult> {
 
   const wantsTerms = siteCategories.length > 0;
 
+  const titleTerms = (state.research?.drafter?.titleTerms ?? [])
+    .filter((t) => t.relevance !== "low")
+    .slice(0, 12)
+    .map((t) => t.term);
+
   const user = [
     `Return exactly these ${wantsTerms ? "eight" : "five"} lines and nothing else:`,
     "TITLE: the post title, under 65 characters, containing the primary keyword",
@@ -238,9 +267,18 @@ export async function metadata(ctx: StageContext): Promise<StageResult> {
           "",
         ]
       : []),
+    `Primary keyword: ${article.keyword}`,
     `Current working title: ${article.title}`,
+    titleTerms.length > 0
+      ? `Recurring terms in top-15 SERP titles (use naturally, do not stuff): ${titleTerms.join(", ")}`
+      : "",
+    state.research?.drafter
+      ? `Search research source: ${providerDisplayName(state.research.drafter.provider)}`
+      : "",
     `The article:\n${clip(htmlToCompact(html), 5_000)}`,
-  ].join("\n");
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
 
   const raw = await ctx.ai({
     system,
@@ -512,7 +550,7 @@ async function rewriteSection(
   ].join("\n\n");
 
   const user = [
-    factsForRewrite(ctx),
+    factsForRewrite(ctx, key),
     "",
     "This section was flagged for:",
     ...reasons,

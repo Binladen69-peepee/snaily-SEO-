@@ -1,4 +1,5 @@
 import { aiKey, aiModel, aiVendor, aiVendorLabel } from "@/lib/ai";
+import { checkDataForSeoHealth } from "@/lib/dataforseo/health";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/google/token-crypto";
 
@@ -213,6 +214,73 @@ async function checkSerpApi(now: Date): Promise<HealthCheck> {
       reason: "The account endpoint timed out. This is usually the network rather than the key.",
     };
   }
+}
+
+/* -------------------------------------------------------------------------
+ * DataForSEO
+ * ---------------------------------------------------------------------- */
+
+async function checkDataForSeo(now: Date): Promise<HealthCheck> {
+  const base = {
+    id: "DATAFORSEO_LOGIN",
+    label: "DataForSEO",
+    deploymentOnly: false,
+    expiresAt: null,
+    checkedAt: now.toISOString(),
+  };
+
+  const health = await checkDataForSeoHealth();
+  const facts: { label: string; value: string }[] = [];
+  if (health.loginHint) {
+    facts.push({ label: "Login", value: health.loginHint });
+  }
+  facts.push({ label: "Status", value: health.status.toUpperCase() });
+
+  if (health.status === "not_configured") {
+    return {
+      ...base,
+      level: "warning",
+      facts,
+      summary: "Not configured",
+      reason:
+        "Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD for SERP (primary) and authority/backlinks. SerpApi remains a SERP fallback when DataForSEO is unavailable.",
+    };
+  }
+  if (health.status === "authenticated") {
+    return {
+      ...base,
+      level: "healthy",
+      facts,
+      summary: "CONNECTED · AUTHENTICATED",
+      reason:
+        "DataForSEO Rank powers domain strength in Keyword Research. This is not Moz DA.",
+    };
+  }
+  if (health.status === "unauthorized") {
+    return {
+      ...base,
+      level: "failing",
+      facts,
+      summary: "Authentication failed",
+      reason: health.message,
+    };
+  }
+  if (health.status === "insufficient_balance") {
+    return {
+      ...base,
+      level: "failing",
+      facts,
+      summary: "Insufficient balance",
+      reason: health.message,
+    };
+  }
+  return {
+    ...base,
+    level: "unknown",
+    facts,
+    summary: "Unavailable",
+    reason: health.message,
+  };
 }
 
 /* -------------------------------------------------------------------------
@@ -658,6 +726,7 @@ export async function runHealthChecks(force = false): Promise<HealthCheck[]> {
   const now = new Date();
   const checks = await Promise.all([
     checkSerpApi(now),
+    checkDataForSeo(now),
     checkAiKey(now),
     checkGoogleClient(now),
     checkGoogleTokens(now),

@@ -16,7 +16,7 @@ import { buildZip } from "@/lib/wordpress/zip";
  * plugin route has a self-check that the emitted source still parses.
  */
 
-export const PLUGIN_VERSION = "1.4.0";
+export const PLUGIN_VERSION = "1.4.1";
 export const PLUGIN_SLUG = "snaily-seo-connector";
 
 /** REST namespace the app talks to. Must match `SNAILY_SEO_NS` below. */
@@ -527,6 +527,7 @@ function snaily_seo_draft(WP_REST_Request $request) {
         'id'     => (int) $id,
         'status' => 'draft',
         'recipe' => $recipe,
+        'seo'    => snaily_seo_meta((int) $id),
         // Built by hand rather than with get_edit_post_link(): that checks
         // current_user_can(), and a token-authenticated request has no logged-in
         // user, so it would always return null here.
@@ -1018,6 +1019,7 @@ function snaily_seo_draft_update(WP_REST_Request $request) {
         'id'        => $id,
         'status'    => 'draft',
         'recipe'    => $recipe,
+        'seo'       => snaily_seo_meta($id),
         'edit_link' => admin_url('post.php?post=' . $id . '&action=edit'),
     );
 }

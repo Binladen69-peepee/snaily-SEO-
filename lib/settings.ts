@@ -18,6 +18,8 @@ export type SettingKey =
   | "SERPAPI_KEY"
   | "OPENPAGERANK_API_KEY"
   | "CRAWLGRAPH_API_KEY"
+  | "DATAFORSEO_LOGIN"
+  | "DATAFORSEO_PASSWORD"
   | "GROK_API_KEY"
   | "GROK_MODEL"
   | "GOOGLE_CLIENT_ID"
@@ -37,7 +39,7 @@ export const SETTINGS: SettingSpec[] = [
     key: "SERPAPI_KEY",
     label: "SerpApi key",
     description:
-      "Powers live Google results, rank checks and competitor citations. Free tier is 250 searches a month.",
+      "Live Google SERP when monthly quota remains (auto-renews). Prefer this for SERP quality when available; DataForSEO covers exhaustion and authority/backlinks so load is shared.",
     secret: true,
     placeholder: "Paste a new key to replace the current one",
   },
@@ -56,6 +58,22 @@ export const SETTINGS: SettingSpec[] = [
       "Referring-domain counts from the Common Crawl webgraph — the only free source of real inbound-link data. Free tier is 15 lookups a month, so results are cached for 30 days and never fetched automatically.",
     secret: true,
     placeholder: "cg_live_… from crawlgraph.com",
+  },
+  {
+    key: "DATAFORSEO_LOGIN",
+    label: "DataForSEO login",
+    description:
+      "API login email from app.dataforseo.com. Used with the password for Basic auth. Never exposed to the browser.",
+    secret: true,
+    placeholder: "API login email",
+  },
+  {
+    key: "DATAFORSEO_PASSWORD",
+    label: "DataForSEO password",
+    description:
+      "API password from app.dataforseo.com. Powers provider-backed domain Rank and backlink summaries. Not Moz DA.",
+    secret: true,
+    placeholder: "API password",
   },
   {
     key: "GROK_API_KEY",

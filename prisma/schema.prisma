@@ -196,16 +196,25 @@ model DomainMetric {
   snailyDa    Int?
   snailyTrust Int?
 
-  /// Referring domains from the Common Crawl graph, via CrawlGraph.
-  /// The free tier is 15 calls a month, so these are fetched only on an
-  /// explicit lookup and reused everywhere else. Null = never looked up.
+  /// Referring domains from the Common Crawl graph, via CrawlGraph,
+  /// or from DataForSEO backlinks/summary when that provider supplied them.
+  /// Null = never looked up.
   referringDomains  Int?
   /// Top linking domains: [{ domain, hosts, authority }].
   linkingDomains    Json     @default("[]")
-  /// Which quarterly crawl the counts came from.
+  /// Which quarterly crawl / provider the counts came from.
   linkDataRelease   String   @default("")
   /// Doubles as the monthly budget counter — one row per call spent.
   linkDataFetchedAt DateTime?
+
+  /// DataForSEO Rank 0–100 (backlinks/bulk_ranks). Not Moz DA.
+  dataforseoRank            Int?
+  /// Backlink count from DataForSEO summary when fetched.
+  dataforseoBacklinks       Int?
+  /// Referring pages from DataForSEO summary when fetched.
+  dataforseoReferringPages  Int?
+  /// When DataForSEO rank/summary was last written. Auth failures are not cached long.
+  dataforseoFetchedAt       DateTime?
 
   /// Which signals were actually present, so the UI can show confidence.
   signalsUsed String[] @default([])
@@ -214,6 +223,7 @@ model DomainMetric {
   updatedAt DateTime @updatedAt
 
   @@index([fetchedAt])
+  @@index([dataforseoFetchedAt])
 }
 
 /// Record of an owner signing in as another account.
@@ -332,10 +342,19 @@ model AuditPage {
   canonical         String    @default("")
   indexable         Boolean   @default(true)
   lastModified      DateTime?
+  /// Content images only — chrome and decorative images excluded.
   imagesTotal       Int       @default(0)
+  /// Content images with no alt attribute at all.
   imagesMissingAlt  Int       @default(0)
+  /// Images correctly marked decorative (alt="", role=presentation, aria-hidden).
+  imagesDecorative  Int       @default(0)
+  /// Images belonging to site chrome rather than this page's content.
+  imagesChrome      Int       @default(0)
   internalLinkCount Int       @default(0)
+  /// Destinations genuinely gone (404/410/5xx after retry).
   brokenLinks       String[]  @default([])
+  /// Destinations the host refused to serve the crawler, or that timed out.
+  blockedLinks      String[]  @default([])
   /// Issue[]
   issues            Json      @default("[]")
   /// Denormalized codes from `issues` for efficient filtering (replaces Mongo path query).

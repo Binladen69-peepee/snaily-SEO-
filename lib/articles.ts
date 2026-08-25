@@ -1,4 +1,11 @@
 import { prisma } from "@/lib/db";
+import {
+  buildDrafterResearch,
+  emptyDrafterResearch,
+  parseDrafterResearch,
+  researchFromBriefFields,
+  type DrafterResearch,
+} from "@/lib/drafter/research";
 import { buildBrief } from "@/lib/optimizer";
 import { SEGMENT_BREAK } from "@/lib/text";
 import type { TargetTerm } from "@/lib/content-score";
@@ -31,6 +38,16 @@ export type ArticleBrief = {
   /** Pages actually read when building this. */
   analysed: number;
   builtAt: string;
+  /**
+   * Normalized Drafter research — one SERP populate. AI stages consume this;
+   * they never call DataForSEO/SerpApi again for the same keyword.
+   */
+  research?: DrafterResearch;
+  /** Top-15 SERP title vocabulary for the title optimizer. */
+  titleWords?: string[];
+  paa?: string[];
+  relatedSearches?: string[];
+  serpFeatures?: string[];
 };
 
 export const ARTICLE_STATUSES = [
@@ -153,6 +170,38 @@ export function parseBrief(value: unknown): ArticleBrief | null {
     : null;
 }
 
+/**
+ * Prefer the stored DrafterResearch; if missing, rebuild from brief fields.
+ * Never fabricates SERP rows and never calls a provider.
+ */
+export function briefResearch(
+  brief: ArticleBrief | null,
+  keyword: string,
+  country = "us",
+): DrafterResearch {
+  if (brief === null) return emptyDrafterResearch(keyword, country);
+  const parsed = parseDrafterResearch(brief.research);
+  if (parsed?.available) {
+    return { ...parsed, keyword: parsed.keyword || keyword };
+  }
+  return researchFromBriefFields({
+    keyword,
+    location: country,
+    serp: brief.serp,
+    questions: brief.questions,
+    terms: brief.terms.map((t) => t.term),
+    difficulty: brief.difficulty,
+    volume: brief.volume,
+    cpc: brief.cpc,
+    paa: brief.paa,
+    relatedSearches: brief.relatedSearches,
+    serpFeatures: brief.serpFeatures,
+    titleWords: brief.titleWords,
+    retrievedAt: brief.builtAt,
+    cacheHit: true,
+  });
+}
+
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -186,6 +235,41 @@ export async function prepareArticle(
     const targetLinks =
       median(detail.map((p) => p.links).filter((n) => n > 0)) || 5;
 
+    const snap = brief.serpSnapshot;
+    const research = snap
+      ? buildDrafterResearch({
+          serp: snap,
+          difficultySignals: {
+            difficulty: brief.keywordMetrics.difficulty,
+            volume: brief.keywordMetrics.volume,
+            cpc: brief.keywordMetrics.cpc,
+          },
+          bodyTerms: brief.targets.slice(0, 20).map((t) => t.term),
+          providerOverride: snap.fromCache ? "cache" : snap.provider,
+        })
+      : emptyDrafterResearch(keyword, country);
+
+    // Prefer organic rows from the live snapshot (includes uncrawled URLs).
+    const serpRows =
+      snap && snap.organicResults.length > 0
+        ? snap.organicResults.slice(0, 15).map((r, i) => {
+            const crawled = detail.find((p) => p.url === r.url);
+            return {
+              position: r.position || i + 1,
+              title: r.title,
+              url: r.url,
+              domain: r.domain,
+              words: crawled?.words ?? 0,
+            };
+          })
+        : detail.map((p, i) => ({
+            position: i + 1,
+            title: p.title,
+            url: p.url,
+            domain: p.domain,
+            words: p.words,
+          }));
+
     const payload: ArticleBrief = {
       difficulty: brief.keywordMetrics.difficulty,
       volume: brief.keywordMetrics.volume,
@@ -195,15 +279,14 @@ export async function prepareArticle(
       terms: brief.targets,
       headings: brief.headings,
       questions: brief.questions,
-      serp: detail.map((p, i) => ({
-        position: i + 1,
-        title: p.title,
-        url: p.url,
-        domain: p.domain,
-        words: p.words,
-      })),
+      serp: serpRows,
       analysed: detail.length,
       builtAt: new Date().toISOString(),
+      research,
+      titleWords: brief.titleWords,
+      paa: snap?.paa ?? research.paa,
+      relatedSearches: snap?.relatedSearches ?? research.relatedSearches,
+      serpFeatures: snap?.serpFeatures ?? research.serpFeatures,
     };
 
     await prisma.article.update({

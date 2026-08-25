@@ -38,7 +38,7 @@ export async function analyzeUrl(url: string): Promise<OnPageResult> {
   const page = await fetchSinglePage(url);
 
   const issues = runChecks(
-    { ...page, brokenLinks: [], issues: [] },
+    { ...page, brokenLinks: [], blockedLinks: [], issues: [] },
     {
       duplicateTitles: new Set(),
       duplicateDescriptions: new Set(),

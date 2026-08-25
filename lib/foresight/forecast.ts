@@ -502,7 +502,7 @@ export async function buildForecast(options: ForecastOptions): Promise<Forecast>
       },
       {
         label: "SERP results and features",
-        source: `SerpApi cache (${String(evidence.serps.length)} result pages, no new calls)`,
+        source: `SERP cache (${String(evidence.serps.length)} result pages, DataForSEO/SerpApi, no new calls)`,
         provenance: evidence.serps.length > 0 ? "real" : "unavailable",
       },
       {
@@ -525,7 +525,7 @@ export async function buildForecast(options: ForecastOptions): Promise<Forecast>
       },
       {
         label: "Site authority",
-        source: evidence.domainAuthority === null ? "Never looked up" : "Common Crawl / OpenPageRank",
+        source: evidence.domainAuthority === null ? "Never looked up" : "DataForSEO Rank or Snaily Domain Authority",
         provenance: evidence.domainAuthority === null ? "unavailable" : "derived",
       },
     ],

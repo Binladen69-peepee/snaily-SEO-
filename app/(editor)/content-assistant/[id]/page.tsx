@@ -55,12 +55,17 @@ export default async function PostEditorPage({
 
   if (!article) notFound();
 
-  const [wp, google] = await Promise.all([
+  const [wp, google, terms] = await Promise.all([
     prisma.wordPressConnection.findUnique({
       where: { projectId: article.projectId },
       select: { lastError: true },
     }),
     getGoogleAccountPublic(session.userId),
+    prisma.wpTerm.findMany({
+      where: { projectId: article.projectId },
+      select: { name: true, taxonomy: true, count: true },
+      orderBy: { count: "desc" },
+    }),
   ]);
 
   const wpHealth = wordpressHealthFromRow(wp);
@@ -99,6 +104,12 @@ export default async function PostEditorPage({
       wpHealth={wpHealth}
       hasDrive={google?.hasDrive ?? false}
       driveFolderId={article.project.driveFolderId}
+      siteCategories={terms
+        .filter((t) => t.taxonomy === "category")
+        .map((t) => ({ name: t.name, count: t.count }))}
+      siteTags={terms
+        .filter((t) => t.taxonomy === "post_tag")
+        .map((t) => ({ name: t.name, count: t.count }))}
     />
   );
 }

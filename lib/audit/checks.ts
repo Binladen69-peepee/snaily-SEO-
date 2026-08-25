@@ -90,11 +90,26 @@ const CHECKS: Record<string, Check> = {
         : null,
   },
 
+  /*
+   * Counts content images only. An image marked decorative (`alt=""`,
+   * `role="presentation"`, aria-hidden) is correct markup, not a defect, and
+   * site chrome is not this page's content — both are excluded upstream in
+   * lib/audit/images.ts.
+   */
   missing_alt: {
     severity: "low",
     run: (p) =>
       p.imagesMissingAlt > 0
-        ? `${String(p.imagesMissingAlt)} of ${String(p.imagesTotal)} images missing alt text`
+        ? `${String(p.imagesMissingAlt)} of ${String(p.imagesTotal)} content image${p.imagesTotal === 1 ? "" : "s"} missing alt text`
+        : null,
+  },
+
+  /** Informational: shows the author their decorative markup was understood. */
+  decorative_image: {
+    severity: "low",
+    run: (p) =>
+      p.imagesDecorative > 0 && p.imagesMissingAlt === 0
+        ? `${String(p.imagesDecorative)} decorative image${p.imagesDecorative === 1 ? "" : "s"} correctly marked — no alt needed`
         : null,
   },
 
@@ -103,6 +118,19 @@ const CHECKS: Record<string, Check> = {
     run: (p) =>
       p.brokenLinks.length > 0
         ? `${String(p.brokenLinks.length)} broken internal link${p.brokenLinks.length === 1 ? "" : "s"}`
+        : null,
+  },
+
+  /*
+   * A link the host refused to serve the crawler is not a broken link. It is
+   * reported so nothing is hidden, but at low severity and with wording that
+   * does not tell the author to fix a link that works.
+   */
+  blocked_internal_link: {
+    severity: "low",
+    run: (p) =>
+      p.blockedLinks.length > 0
+        ? `${String(p.blockedLinks.length)} link${p.blockedLinks.length === 1 ? "" : "s"} could not be checked (host blocked or timed out) — not broken`
         : null,
   },
 
