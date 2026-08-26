@@ -50,6 +50,7 @@
     "style:benchmark": "node --env-file-if-exists=.env.local scripts/style-benchmark.mjs",
     "style:gap": "node --env-file-if-exists=.env.local scripts/style-gap.mjs",
     "check:connector-ui": "node --env-file-if-exists=.env.local scripts/check-connector-ui.mjs",
+    "build:favicons": "node scripts/build-favicons.mjs",
     "check:plugin-zip": "node scripts/check-plugin-zip.mjs",
     "check:plugin": "node scripts/check-plugin-php.mjs",
     "check:boundary": "node scripts/check-client-boundary.mjs"
