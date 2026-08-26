@@ -9,6 +9,7 @@ import {
   History,
   ImagePlus,
   Loader2,
+  PanelLeft,
   PanelRight,
   PenLine,
   RefreshCw,
@@ -76,6 +77,7 @@ import {
 } from "@/components/articles/draft-progress";
 import { OutlinePanel } from "@/components/articles/outline-panel";
 import { QualityPanel } from "@/components/articles/quality-panel";
+import { ArticleControlPanel } from "@/components/articles/article-control-panel";
 import { RecipePanel } from "@/components/articles/recipe-panel";
 import {
   ResizeHandle,
@@ -107,7 +109,12 @@ const TABS: { id: SidebarTab; label: string }[] = [
   { id: "seo", label: "SEO" },
   { id: "outline", label: "Outline" },
   { id: "quality", label: "Quality" },
-  { id: "recipe", label: "Recipe" },
+  /*
+   * No "Recipe" tab. The recipe is edited from the article panel on the left,
+   * which is where its source and its card fields live — two editors on one
+   * object is two places for it to be wrong. The recipe view still renders
+   * here when that panel asks for it.
+   */
   { id: "keywords", label: "Keywords" },
   { id: "comments", label: "Comments" },
 ];
@@ -183,6 +190,18 @@ export function ArticleEditor({
     minWidth: 300,
     maxWidth: 640,
   });
+
+  /** Width of the article-control panel on the left. */
+  const control = useResizablePanel({
+    id: "control",
+    side: "left",
+    defaultWidth: 300,
+    minWidth: 240,
+    maxWidth: 520,
+  });
+  const [controlOpen, setControlOpen] = useState(true);
+  /** A whole-article redraft or proofread is in flight. */
+  const [rewriting, setRewriting] = useState(false);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("saved");
   const [wide, setWide] = useState(false);
 
@@ -570,6 +589,71 @@ export function ArticleEditor({
     void save({ comments: next });
   }
 
+  /**
+   * Restore a snapshot.
+   *
+   * Lifted out of the history dialog so the control panel restores through the
+   * same path — two copies of this would be two chances to forget to refresh
+   * the revision list afterwards.
+   */
+  async function restoreRevision(revisionId: string) {
+    const res = await fetch(`/api/articles/${article.id}/revisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revisionId }),
+    });
+    const data = (await res.json()) as {
+      title?: string;
+      content?: string;
+      revisions?: ArticleRevision[];
+      error?: string;
+    };
+    if (!res.ok) {
+      toast.error(data.error ?? "Could not restore.");
+      return;
+    }
+    if (data.title) setTitle(data.title);
+    if (data.content) setContent(data.content);
+    if (data.revisions) setRevisions(data.revisions);
+    setHistoryOpen(false);
+    toast.success("Restored that version.");
+  }
+
+  /**
+   * Redraft or proofread the whole article.
+   *
+   * Both write a snapshot server-side before they touch anything, so the
+   * button is safe to press on work in progress.
+   */
+  async function runDrafter(action: "redraft" | "proof") {
+    setRewriting(true);
+    try {
+      const res = await fetch(`/api/articles/${article.id}/drafter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json()) as {
+        title?: string;
+        content?: string;
+        revisions?: ArticleRevision[];
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.error ?? "Could not run that.");
+        return;
+      }
+      if (data.title) setTitle(data.title);
+      if (data.content) setContent(data.content);
+      if (data.revisions) setRevisions(data.revisions);
+      toast.success(action === "redraft" ? "Redrafted." : "Proofread.");
+    } catch {
+      toast.error("Could not reach the server");
+    } finally {
+      setRewriting(false);
+    }
+  }
+
   async function runAi() {
     if (instruction.trim() === "") return;
     setGenerating(true);
@@ -849,6 +933,24 @@ ${htmlBody}
           <span className="hidden sm:inline">Delete</span>
         </button>
 
+        {/* The left panel is a docked column, so its toggle only makes sense
+            at the width where it is docked. */}
+        <button
+          type="button"
+          onClick={() => {
+            setControlOpen((o) => !o);
+          }}
+          aria-label={controlOpen ? "Hide article controls" : "Show article controls"}
+          title={controlOpen ? "Hide article controls" : "Show article controls"}
+          aria-pressed={controlOpen}
+          className={cn(
+            "hidden rounded-md p-1.5 transition-colors hover:bg-accent hover:text-foreground xl:inline-flex",
+            controlOpen ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          <PanelLeft className="size-3.5" />
+        </button>
+
         <button
           type="button"
           onClick={() => {
@@ -878,6 +980,51 @@ ${htmlBody}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
+        {/* ================= Article controls (left) ================= */}
+        {!wide && controlOpen && (
+          <aside
+            style={{ ["--control-w" as string]: `${String(control.width)}px` }}
+            className="relative hidden shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-[var(--control-w)]"
+          >
+            <ArticleControlPanel
+              recipe={recipe}
+              content={content}
+              revisions={revisions}
+              isDrafter={isDrafter}
+              jobRunning={draftJob.live}
+              busy={rewriting}
+              onStartDraft={() => {
+                void draftJob.start();
+              }}
+              onRedraft={() => {
+                void runDrafter("redraft");
+              }}
+              onProof={() => {
+                void runDrafter("proof");
+              }}
+              onRestore={(id) => {
+                void restoreRevision(id);
+              }}
+              onEditRecipe={() => {
+                setSidebarOpen(true);
+                setTab("recipe");
+              }}
+              onJumpToHeading={jumpToHeading}
+            />
+            <ResizeHandle
+              side="left"
+              label="Resize article controls"
+              dragging={control.dragging}
+              width={control.width}
+              minWidth={control.minWidth}
+              maxWidth={control.maxWidth}
+              onPointerDown={control.onPointerDown}
+              onKeyDown={control.onKeyDown}
+              onReset={control.reset}
+            />
+          </aside>
+        )}
+
         {/* ================= Canvas ================= */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {view === "preview" ? (
