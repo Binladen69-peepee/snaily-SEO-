@@ -77,6 +77,10 @@ import {
 import { OutlinePanel } from "@/components/articles/outline-panel";
 import { QualityPanel } from "@/components/articles/quality-panel";
 import { RecipePanel } from "@/components/articles/recipe-panel";
+import {
+  ResizeHandle,
+  useResizablePanel,
+} from "@/components/articles/resizable-panel";
 import { TermSelect, type SiteTermOption } from "@/components/articles/term-select";
 import {
   hasRecipe,
@@ -170,6 +174,15 @@ export function ArticleEditor({
     initialBrief === null && initialBriefError === null,
   );
   const [tab, setTab] = useState<SidebarTab>("meta");
+
+  /** Width of the research panel, dragged by its edge and remembered. */
+  const research = useResizablePanel({
+    id: "research",
+    side: "right",
+    defaultWidth: 360,
+    minWidth: 300,
+    maxWidth: 640,
+  });
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("saved");
   const [wide, setWide] = useState(false);
 
@@ -1035,14 +1048,31 @@ ${htmlBody}
         )}
         {!wide && (
           <aside
+            /*
+             * The width is a pixel value above xl, where the panel is docked
+             * and draggable. Below that it is a full-width sheet, so a pixel
+             * width would fight the layout rather than describe it.
+             */
+            style={wide ? undefined : { ["--panel-w" as string]: `${String(research.width)}px` }}
             className={cn(
-              "flex w-full shrink-0 flex-col border-border bg-card",
-              "xl:flex xl:w-[22.5rem] xl:border-l xl:border-t-0",
+              "relative flex w-full shrink-0 flex-col border-border bg-card",
+              "xl:flex xl:w-[var(--panel-w)] xl:border-l xl:border-t-0",
               sidebarOpen
                 ? "fixed inset-y-0 right-0 z-50 w-[min(100%,22.5rem)] border-l shadow-xl"
                 : "hidden border-t xl:relative xl:flex",
             )}
           >
+            <ResizeHandle
+              side="right"
+              label="Resize research panel"
+              dragging={research.dragging}
+              width={research.width}
+              minWidth={research.minWidth}
+              maxWidth={research.maxWidth}
+              onPointerDown={research.onPointerDown}
+              onKeyDown={research.onKeyDown}
+              onReset={research.reset}
+            />
             <div className="space-y-2.5 border-b border-border p-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
