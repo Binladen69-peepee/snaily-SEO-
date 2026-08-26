@@ -1,25 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="32" height="32">
   <!--
     The browser-tab icon, and the source every other favicon is built from.
 
     Same glyph the sidebar wordmark uses (lucide's `snail`) in the same brand
-    blue, so the tab and the app read as one thing. #3a7ff3 is the hex of the
-    primary colour token, oklch(0.615 0.187 260); a literal oklch() here is not
-    dependable in every tab renderer, and a favicon is the wrong place to be
-    clever about colour spaces.
+    blue. #3a7ff3 is the hex of the primary colour token,
+    oklch(0.615 0.187 260); a literal oklch() here is not dependable in every
+    tab renderer, and a favicon is the wrong place to be clever about colour
+    spaces.
+
+    Shaped like an app tile rather than a bare glyph: a pure white rounded
+    square with the snail inset. Transparency vanished on a dark tab strip,
+    and a full-bleed square looked clipped next to neighbouring tabs whose
+    icons are all rounded.
+
+    The 28 unit box holds a 24 unit glyph, so the snail is drawn at its native
+    scale and simply offset by 2 on each axis. That keeps the geometry exact
+    instead of scaling the paths, and the stroke stays the width it was drawn
+    at. The padding is deliberately tight: rendered at 16px and compared side
+    by side, a 4 unit inset turned the spiral to mush while this one still
+    reads as a snail.
 
     Next.js serves this as the favicon automatically. scripts/build-favicons.mjs
     rasterises it into favicon.ico and apple-icon.png, so keep this file valid
-    XML: no double hyphen inside this comment, or sharp cannot parse it.
+    XML: no double hyphen inside a comment, or sharp cannot parse it.
   -->
-  <!--
-    A white ground behind the snail. Transparent looked right on a light tab
-    strip and vanished on a dark one, where the browser paints its own dark
-    background straight through the glyph. Full bleed so the square reads as a
-    deliberate tile rather than a clipped shape.
-  -->
-  <rect x="0" y="0" width="24" height="24" fill="#ffffff" />
-  <g fill="none" stroke="#3a7ff3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="0" y="0" width="28" height="28" rx="6" ry="6" fill="#ffffff" />
+  <g
+    transform="translate(2 2)"
+    fill="none"
+    stroke="#3a7ff3"
+    stroke-width="2.1"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
     <path d="M2 13a6 6 0 1 0 12 0 4 4 0 1 0-8 0 2 2 0 0 0 4 0" />
     <circle cx="10" cy="13" r="8" />
     <path d="M2 21h12c4.4 0 8-3.6 8-8V7a2 2 0 1 0-4 0v6" />
