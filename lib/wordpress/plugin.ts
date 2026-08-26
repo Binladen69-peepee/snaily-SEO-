@@ -16,7 +16,7 @@ import { buildZip } from "@/lib/wordpress/zip";
  * plugin route has a self-check that the emitted source still parses.
  */
 
-export const PLUGIN_VERSION = "1.4.1";
+export const PLUGIN_VERSION = "1.4.2";
 export const PLUGIN_SLUG = "snaily-seo-connector";
 
 /** REST namespace the app talks to. Must match `SNAILY_SEO_NS` below. */
@@ -49,6 +49,7 @@ if (!defined('ABSPATH')) {
 
 define('SNAILY_SEO_VERSION', '${PLUGIN_VERSION}');
 define('SNAILY_SEO_OPTION', 'snaily_seo_token');
+define('SNAILY_SEO_AUTHOR_OPTION', 'snaily_seo_author');
 define('SNAILY_SEO_NS', '${PLUGIN_NAMESPACE}');
 
 /* ---------------------------------------------------------------------------
@@ -67,6 +68,35 @@ define('SNAILY_SEO_NS', '${PLUGIN_NAMESPACE}');
 function snaily_seo_token() {
     $token = get_option(SNAILY_SEO_OPTION);
     return is_string($token) ? $token : '';
+}
+
+/**
+ * Who a draft is attributed to.
+ *
+ * Drafts arrive over a token, not a WordPress login, so wp_insert_post had no
+ * author to use and fell back to whatever user context the request ran in —
+ * which is how posts sent from the app ended up bylined to whoever happened to
+ * be uploading rather than to the site's own author.
+ *
+ * The site decides this, not the app: whoever is configured here gets the
+ * byline no matter which app account sent the draft. Default is the first
+ * administrator, which on a single-author site is the right answer already.
+ */
+function snaily_seo_author_id() {
+    $stored = (int) get_option(SNAILY_SEO_AUTHOR_OPTION, 0);
+    if ($stored > 0 && get_userdata($stored)) {
+        return $stored;
+    }
+
+    $admins = get_users(array(
+        'role'    => 'administrator',
+        'orderby' => 'ID',
+        'order'   => 'ASC',
+        'number'  => 1,
+        'fields'  => 'ID',
+    ));
+
+    return empty($admins) ? 0 : (int) $admins[0];
 }
 
 function snaily_seo_generate_token() {
@@ -494,14 +524,21 @@ function snaily_seo_draft(WP_REST_Request $request) {
         return new WP_Error('snaily_no_title', 'A title is required.', array('status' => 400));
     }
 
-    $id = wp_insert_post(array(
+    $insert = array(
         'post_title'   => $title,
         'post_content' => wp_kses_post((string) $request->get_param('content')),
         'post_excerpt' => sanitize_text_field((string) $request->get_param('excerpt')),
         'post_name'    => sanitize_title((string) $request->get_param('slug')),
         'post_status'  => 'draft',
         'post_type'    => 'post',
-    ), true);
+    );
+
+    $author = snaily_seo_author_id();
+    if ($author > 0) {
+        $insert['post_author'] = $author;
+    }
+
+    $id = wp_insert_post($insert, true);
 
     if (is_wp_error($id)) {
         return $id;
@@ -989,6 +1026,15 @@ function snaily_seo_draft_update(WP_REST_Request $request) {
         $data['post_name'] = $slug;
     }
 
+    /*
+     * Re-attribute on update as well. A draft exported before this existed
+     * carries the wrong byline, and re-exporting is how the author fixes it.
+     */
+    $author = snaily_seo_author_id();
+    if ($author > 0) {
+        $data['post_author'] = $author;
+    }
+
     $updated = wp_update_post($data, true);
     if (is_wp_error($updated)) {
         return $updated;
@@ -1212,6 +1258,22 @@ function snaily_seo_menu() {
 }
 
 add_action('admin_post_snaily_seo_regenerate', 'snaily_seo_regenerate');
+add_action('admin_post_snaily_seo_save_author', 'snaily_seo_save_author');
+
+function snaily_seo_save_author() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Not allowed.');
+    }
+    check_admin_referer('snaily_seo_save_author');
+
+    $author = isset($_POST['snaily_author']) ? (int) $_POST['snaily_author'] : 0;
+    if ($author > 0 && get_userdata($author)) {
+        update_option(SNAILY_SEO_AUTHOR_OPTION, $author, false);
+    }
+
+    wp_safe_redirect(admin_url('options-general.php?page=snaily-seo&author_saved=1'));
+    exit;
+}
 
 /** Rotates the token, which immediately breaks any existing connection. */
 function snaily_seo_regenerate() {
@@ -1247,10 +1309,17 @@ function snaily_seo_settings_page() {
 
     $token = snaily_seo_token();
     $regenerated = isset($_GET['regenerated']);
+    $author_saved = isset($_GET['author_saved']);
     $persists = snaily_seo_token_persists($token);
     ?>
     <div class="wrap">
         <h1>Snaily SEO Connector</h1>
+
+        <?php if ($author_saved) : ?>
+            <div class="notice notice-success"><p>
+                Draft author saved. New and re-exported drafts will use it.
+            </p></div>
+        <?php endif; ?>
 
         <?php if ($regenerated) : ?>
             <div class="notice notice-warning"><p>
@@ -1319,6 +1388,24 @@ function snaily_seo_settings_page() {
                 Deactivate the plugin to revoke access entirely.
             </li>
         </ul>
+
+        <h2>Draft author</h2>
+        <p>
+            Every draft Snaily SEO creates is attributed to this user, whoever
+            sent it from the app.
+        </p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="snaily_seo_save_author" />
+            <?php wp_nonce_field('snaily_seo_save_author'); ?>
+            <?php
+            wp_dropdown_users(array(
+                'name'     => 'snaily_author',
+                'selected' => snaily_seo_author_id(),
+                'who'      => 'authors',
+            ));
+            ?>
+            <?php submit_button('Save author', 'secondary'); ?>
+        </form>
 
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <input type="hidden" name="action" value="snaily_seo_regenerate" />
