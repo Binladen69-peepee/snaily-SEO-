@@ -13,6 +13,7 @@ import type {
   PageIntel,
   PageSnapshot,
 } from "@/lib/intelligence/types";
+import { isDefect } from "@/lib/audit/types";
 import { prisma } from "@/lib/db";
 import { getPagePerformance, toPath } from "@/lib/google/performance";
 
@@ -143,9 +144,17 @@ export async function buildReport(
     summary: {
       hasPerformance: performance.size > 0,
       totalPages: pages.length,
+      pagesFound: Math.max(latest.pagesFound, pages.length),
       needsAttention: pages.filter((p) => p.priority.score >= ATTENTION_THRESHOLD)
         .length,
-      cleanPages: pages.filter((p) => p.issues.length === 0).length,
+      /*
+       * Clean means "nothing to fix", not "nothing to say". A page whose only
+       * entries are an image correctly marked decorative, or a note that the
+       * crawler was blocked, has no defect on it.
+       */
+      cleanPages: pages.filter(
+        (p) => p.issues.filter((i) => isDefect(i.code)).length === 0,
+      ).length,
       decayingPages: pages.filter((p) => p.decay.length > 0).length,
       avgPriority:
         pages.length === 0 ? 0 : Math.round(totalPriority / pages.length),

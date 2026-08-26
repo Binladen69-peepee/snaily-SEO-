@@ -15,7 +15,8 @@ export type IssueCode =
   | "blocked_internal_link"
   | "decorative_image"
   | "not_indexable"
-  | "http_error";
+  | "http_error"
+  | "page_unreachable";
 
 export type Issue = {
   code: IssueCode;
@@ -71,7 +72,29 @@ export const ISSUE_LABEL: Record<IssueCode, string> = {
   decorative_image: "Decorative images (no alt needed)",
   not_indexable: "Not indexable",
   http_error: "HTTP error",
+  page_unreachable: "Could not be crawled",
 };
+
+/**
+ * Issues that are not defects.
+ *
+ * Each of these tells the author something true and asks nothing of them: an
+ * image correctly marked decorative, or a page the crawler could not reach.
+ * Counting them as problems made every page on the client's site "unclean"
+ * and dragged the health score down for markup that was already right.
+ *
+ * They still appear in the issue list; they just do not make a page dirty.
+ */
+export const INFORMATIONAL_ISSUES: ReadonlySet<IssueCode> = new Set([
+  "decorative_image",
+  "blocked_internal_link",
+  "page_unreachable",
+]);
+
+/** True when this issue asks the author to change something. */
+export function isDefect(code: IssueCode): boolean {
+  return !INFORMATIONAL_ISSUES.has(code);
+}
 
 export const SEVERITY_WEIGHT: Record<IssueSeverity, number> = {
   high: 5,

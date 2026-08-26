@@ -23,7 +23,35 @@ export const CRAWL_DEFAULTS = {
    */
   retryUserAgent:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  /** Pause before a retry when the host gave no Retry-After. */
+  backoffMs: 2_500,
+  maxBackoffMs: 15_000,
+  /** Politeness ceiling once a host has started rate limiting us. */
+  maxPolitenessMs: 2_000,
 };
+
+/** Sleep that gives up when the crawl is aborted. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+/** Retry-After, which is either seconds or an HTTP date. */
+function retryAfterMs(header: string | null): number {
+  if (header === null) return 0;
+  const seconds = Number(header.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const when = Date.parse(header);
+  return Number.isNaN(when) ? 0 : Math.max(0, when - Date.now());
+}
 
 /**
  * Blocks private / loopback / link-local hosts so a crawl can't hit internal
@@ -116,6 +144,7 @@ export async function fetchSinglePage(url: string): Promise<FetchedPage> {
 async function fetchPage(
   url: string,
   signal: AbortSignal,
+  onBlocked?: () => void,
 ): Promise<FetchedPage> {
   const empty: FetchedPage = {
     url,
@@ -166,16 +195,36 @@ async function fetchPage(
       : res;
 
   if (shouldRetry(outcome) && !signal.aborted) {
-    const retried = await attempt(CRAWL_DEFAULTS.retryUserAgent);
-    const retryOutcome =
-      retried instanceof Response
-        ? classifyResponse(url, retried.status, retried.url)
-        : retried;
-    // Keep the better of the two: a retry that succeeded settles it.
-    if (retryOutcome.state === "valid" || retryOutcome.state === "redirect") {
-      res = retried;
-      outcome = retryOutcome;
-    } else {
+    /*
+     * Wait before trying again.
+     *
+     * Cloudflare's 429 on the client's site is a rate limit, so retrying
+     * immediately with a different user agent just collects a second 429 —
+     * measured at 17 of 40 pages still blocked. Honour Retry-After when the
+     * host sends one, otherwise back off far enough to leave the window.
+     */
+    const retryAfter =
+      res instanceof Response ? retryAfterMs(res.headers.get("retry-after")) : 0;
+    const wait = Math.min(
+      CRAWL_DEFAULTS.maxBackoffMs,
+      retryAfter > 0 ? retryAfter : CRAWL_DEFAULTS.backoffMs,
+    );
+    await sleep(wait, signal);
+    onBlocked?.();
+
+    const retried = signal.aborted
+      ? null
+      : await attempt(CRAWL_DEFAULTS.retryUserAgent);
+
+    if (retried !== null) {
+      const retryOutcome =
+        retried instanceof Response
+          ? classifyResponse(url, retried.status, retried.url)
+          : retried;
+      // Keep the better of the two: a retry that succeeded settles it.
+      if (retryOutcome.state === "valid" || retryOutcome.state === "redirect") {
+        res = retried;
+      }
       outcome = retryOutcome;
     }
   }
@@ -288,6 +337,9 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
   try {
     const disallow = await fetchRobots(start.origin, controller.signal);
 
+    /** How many times a host has refused us; widens the politeness gap. */
+    let blocks = 0;
+
     const queue: string[] = [normalize(start.toString())];
     const seen = new Set<string>(queue);
     const pages: FetchedPage[] = [];
@@ -313,7 +365,9 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
             pageController.abort();
           }, CRAWL_DEFAULTS.timeoutMs);
           try {
-            return await fetchPage(url, pageController.signal);
+            return await fetchPage(url, pageController.signal, () => {
+              blocks += 1;
+            });
           } finally {
             clearTimeout(pageTimer);
             controller.signal.removeEventListener("abort", onAbort);
@@ -338,7 +392,20 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
       }
 
       await options.onProgress?.(pages.length, seen.size);
-      await new Promise((r) => setTimeout(r, CRAWL_DEFAULTS.politenessMs));
+
+      /*
+       * Slow down when the host starts refusing us.
+       *
+       * A fixed 200ms gap is polite to a quiet server and far too fast for one
+       * behind a rate limiter: the client's site refused 17 of 40 pages at that
+       * pace. Each block widens the gap, so a crawl that starts hitting limits
+       * finishes slower but complete, rather than fast and full of holes.
+       */
+      const politeness = Math.min(
+        CRAWL_DEFAULTS.maxPolitenessMs,
+        CRAWL_DEFAULTS.politenessMs * (1 + blocks),
+      );
+      await sleep(politeness, controller.signal);
     }
 
     /*

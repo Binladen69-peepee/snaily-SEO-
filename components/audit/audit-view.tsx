@@ -84,6 +84,8 @@ export function AuditView({
   const [total, setTotal] = useState(0);
   const [pageNum, setPageNum] = useState(1);
   const [starting, setStarting] = useState(false);
+  /** Pages per crawl. 500 is the API's ceiling. */
+  const [crawlLimit, setCrawlLimit] = useState(500);
   const [loadingPages, setLoadingPages] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -187,14 +189,22 @@ export function AuditView({
     void loadPages(id);
   }, [loadPages, audit?.status]);
 
-  async function startAudit() {
+  /*
+   * How many pages a crawl covers.
+   *
+   * This was hard-coded to 100 while the API accepted up to 500, so a site
+   * with 600 pages was audited a sixth at a time with nothing on screen
+   * saying so — "0/100 clean" on a 600-page site reads as a broken number
+   * rather than a partial crawl.
+   */
+  async function startAudit(limit: number = crawlLimit) {
     if (projectId === null) return;
     setStarting(true);
 
     const res = await fetch("/api/audits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, maxPages: 100 }),
+      body: JSON.stringify({ projectId, maxPages: limit }),
     });
 
     const data = (await res.json()) as { id?: string; error?: string };
@@ -314,6 +324,25 @@ export function AuditView({
               </a>
             </Button>
           )}
+          {/*
+            How deep the next crawl goes. A site larger than the limit is only
+            partly audited, and every count on the Content screen is a count of
+            what was crawled — so the choice belongs next to the button that
+            starts it, not buried in a constant.
+          */}
+          <select
+            aria-label="Pages per crawl"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={crawlLimit}
+            onChange={(e) => {
+              setCrawlLimit(Number(e.target.value));
+            }}
+            disabled={starting || running}
+          >
+            <option value={100}>100 pages</option>
+            <option value={250}>250 pages</option>
+            <option value={500}>500 pages</option>
+          </select>
           <Button onClick={() => void startAudit()} disabled={starting || running}>
           {starting || running ? (
             <Loader2 className="animate-spin" />

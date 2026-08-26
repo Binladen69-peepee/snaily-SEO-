@@ -82,7 +82,11 @@ export type Comparison = {
 export type IntelSummary = {
   /** True when Google data was available for this report. */
   hasPerformance: boolean;
+  /** Pages actually crawled and assessed. */
   totalPages: number;
+  /** Distinct internal URLs the crawl discovered, including ones the page cap
+   *  stopped it fetching. Always >= totalPages. */
+  pagesFound: number;
   needsAttention: number;
   cleanPages: number;
   decayingPages: number;

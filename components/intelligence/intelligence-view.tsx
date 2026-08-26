@@ -360,11 +360,21 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
           hint="Content shrank or issues grew since last crawl"
           tone={summary.decayingPages > 0 ? "warning" : "default"}
         />
+        {/*
+          The denominator is pages CRAWLED, not pages on the site. Reading
+          "0/100" on a 600-page site invites the fair conclusion that the
+          number is wrong, so the hint says which 100 these are and whether
+          the crawl stopped short of what it found.
+        */}
         <SummaryCard
           icon={CheckCircle2}
           label="Clean pages"
           value={`${String(summary.cleanPages)}/${String(summary.totalPages)}`}
-          hint="No issues found on these pages"
+          hint={
+            summary.pagesFound > summary.totalPages
+              ? `No issues found on these pages — of ${String(summary.totalPages)} crawled, ${String(summary.pagesFound)} found. Raise the crawl limit to cover the rest.`
+              : "No issues found on these pages"
+          }
           tone={summary.cleanPages === summary.totalPages ? "success" : "default"}
         />
       </div>

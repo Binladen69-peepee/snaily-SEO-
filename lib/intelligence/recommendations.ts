@@ -108,6 +108,13 @@ export const RECOMMENDATIONS: Record<IssueCode, Recommendation> = {
     effort: "quick",
   },
 
+  page_unreachable: {
+    action:
+      "Nothing to fix on the page. The host answered the crawler with a block (403/429) or the request timed out, so this page could not be read this time — readers are unaffected. If it keeps happening, allow the crawler's user agent through your firewall or CDN so the audit can see the page.",
+    why: "A page the crawler could not fetch has not been assessed. It is listed so a gap in the audit is visible rather than silently counted as healthy.",
+    effort: "quick",
+  },
+
   decorative_image: {
     action:
       "Nothing to do. These images carry `alt=\"\"`, `role=\"presentation\"` or aria-hidden, which is the correct way to mark an image a screen reader should skip.",

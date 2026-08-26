@@ -1,6 +1,7 @@
 import { runChecks, type CheckContext } from "@/lib/audit/checks";
 import { crawlSite } from "@/lib/audit/crawler";
 import {
+  isDefect,
   SEVERITY_WEIGHT,
   type CrawledPage,
   type Issue,
@@ -12,7 +13,11 @@ const MIN_WORD_COUNT = 300;
 
 /** Sum of severity weights — higher means this page needs attention sooner. */
 function issueScore(page: CrawledPage): number {
-  return page.issues.reduce((sum, i) => sum + SEVERITY_WEIGHT[i.severity], 0);
+  // Informational rows carry no weight: correct markup must not cost a site
+  // health points, and neither must the crawler being rate limited.
+  return page.issues
+    .filter((i) => isDefect(i.code))
+    .reduce((sum, i) => sum + SEVERITY_WEIGHT[i.severity], 0);
 }
 
 /**

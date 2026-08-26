@@ -19,20 +19,49 @@ type Check = {
   run: (page: CrawledPage, ctx: CheckContext) => string | null;
 };
 
+/**
+ * Whether we actually read this page's HTML.
+ *
+ * Content checks are only meaningful when there was content. `status < 400`
+ * looked like that test and was not: a request that never completed is
+ * recorded as status 0, which passes `< 400`, so a page the crawler could not
+ * reach was reported as having no title and no H1. A page the host refused to
+ * serve (403/429) has no HTML either.
+ */
+function analysed(p: CrawledPage): boolean {
+  return p.outcome.state === "valid" || p.outcome.state === "redirect";
+}
+
 const CHECKS: Record<string, Check> = {
+  /*
+   * A real HTTP failure. Cloudflare answers this crawler with 429 on the
+   * client's site, and `status >= 400` made every rate-limited page a
+   * high-severity error: 59 of 100 pages in the last audit, which is why not
+   * one page came back clean. Only a destination that genuinely failed counts.
+   */
   http_error: {
     severity: "high",
-    run: (p) => (p.status >= 400 ? `Returned HTTP ${String(p.status)}` : null),
+    run: (p) =>
+      p.outcome.state === "broken" ? `Returned HTTP ${String(p.status)}` : null,
+  },
+
+  /** The crawler could not read the page. Says nothing about the page. */
+  page_unreachable: {
+    severity: "low",
+    run: (p) =>
+      p.outcome.state === "blocked" || p.outcome.state === "timeout"
+        ? p.outcome.detail
+        : null,
   },
 
   missing_title: {
     severity: "high",
-    run: (p) => (p.status < 400 && p.title.trim() === "" ? "No title tag" : null),
+    run: (p) => (analysed(p) && p.title.trim() === "" ? "No title tag" : null),
   },
 
   missing_h1: {
     severity: "medium",
-    run: (p) => (p.status < 400 && p.h1.length === 0 ? "No H1 heading" : null),
+    run: (p) => (analysed(p) && p.h1.length === 0 ? "No H1 heading" : null),
   },
 
   multiple_h1: {
@@ -44,7 +73,7 @@ const CHECKS: Record<string, Check> = {
   missing_meta_description: {
     severity: "medium",
     run: (p) =>
-      p.status < 400 && p.metaDescription.trim() === ""
+      analysed(p) && p.metaDescription.trim() === ""
         ? "No meta description"
         : null,
   },
@@ -52,7 +81,7 @@ const CHECKS: Record<string, Check> = {
   title_too_long: {
     severity: "low",
     run: (p) =>
-      p.status < 400 && p.title.length > 60
+      analysed(p) && p.title.length > 60
         ? `${String(p.title.length)} characters — Google typically truncates after ~60`
         : null,
   },
@@ -60,7 +89,7 @@ const CHECKS: Record<string, Check> = {
   meta_too_long: {
     severity: "low",
     run: (p) =>
-      p.status < 400 && p.metaDescription.length > 160
+      analysed(p) && p.metaDescription.length > 160
         ? `${String(p.metaDescription.length)} characters — snippet may be cut off`
         : null,
   },
@@ -68,7 +97,7 @@ const CHECKS: Record<string, Check> = {
   short_content: {
     severity: "medium",
     run: (p, ctx) =>
-      p.status < 400 && p.wordCount > 0 && p.wordCount < ctx.minWordCount
+      analysed(p) && p.wordCount > 0 && p.wordCount < ctx.minWordCount
         ? `Only ${String(p.wordCount)} words`
         : null,
   },
@@ -137,7 +166,7 @@ const CHECKS: Record<string, Check> = {
   not_indexable: {
     severity: "medium",
     run: (p) =>
-      p.status < 400 && !p.indexable ? "Blocked by a noindex directive" : null,
+      analysed(p) && !p.indexable ? "Blocked by a noindex directive" : null,
   },
 };
 

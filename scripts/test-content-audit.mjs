@@ -27,7 +27,12 @@ const check = (ok, label, extra = "") => {
 };
 
 const built = compile(
-  ["lib/audit/images.ts", "lib/audit/link-status.ts", "lib/audit/checks.ts"],
+  [
+    "lib/audit/images.ts",
+    "lib/audit/link-status.ts",
+    "lib/audit/checks.ts",
+    "lib/audit/types.ts",
+  ],
   { prefix: ".contentaudit-" },
 );
 
@@ -49,6 +54,7 @@ try {
     normalizeForCompare,
   } = await built.load("lib/audit/link-status.ts");
   const { runChecks } = await built.load("lib/audit/checks.ts");
+  const { isDefect } = await built.load("lib/audit/types.ts");
 
   /* ------------------------------------------------------------------ */
   console.log("\nB — an empty alt is correct markup, not a defect");
@@ -256,6 +262,65 @@ try {
   check(
     codes(page({ brokenLinks: ["https://a.com/x"] })).includes("broken_internal_link"),
     "a genuinely broken link still raises the issue",
+  );
+
+  /* ------------------------------------------------------------------ */
+  console.log("\nA page the host refused is not a page with errors");
+
+  const blockedPage = page({ status: 429, outcome: outcomes.rate });
+  const brokenPage = page({ status: 404, outcome: outcomes.gone });
+
+  check(
+    !codes(blockedPage).includes("http_error"),
+    "a 429 raises no HTTP error — 59 of 100 pages in the client's last audit",
+  );
+  check(
+    codes(blockedPage).includes("page_unreachable"),
+    "it is reported as unreachable instead",
+  );
+  check(codes(brokenPage).includes("http_error"), "a real 404 IS an HTTP error");
+
+  // The status-0 hole: a request that never completed passed `status < 400`,
+  // so a page that was never read was reported as having no title and no H1.
+  const unreachable = page({
+    status: 0,
+    outcome: outcomes.abort,
+    title: "",
+    h1: [],
+    metaDescription: "",
+    wordCount: 0,
+  });
+  const unreachableCodes = codes(unreachable);
+  for (const code of [
+    "missing_title",
+    "missing_h1",
+    "missing_meta_description",
+    "short_content",
+  ]) {
+    check(
+      !unreachableCodes.includes(code),
+      `  a page that was never fetched is not accused of ${code}`,
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  console.log("\nClean means nothing to fix, not nothing to say");
+
+  check(!isDefect("decorative_image"), "correct decorative markup is not a defect");
+  check(!isDefect("blocked_internal_link"), "an unreachable link target is not a defect");
+  check(!isDefect("page_unreachable"), "a blocked crawl is not a defect");
+  check(isDefect("missing_alt"), "a real missing alt IS a defect");
+  check(isDefect("broken_internal_link"), "a real broken link IS a defect");
+  check(isDefect("http_error"), "a real HTTP error IS a defect");
+
+  const informationalOnly = page({ imagesDecorative: 12, blockedLinks: ["https://a.com/x"] });
+  check(
+    runChecks(informationalOnly, ctx).length > 0,
+    "a page with only informational rows still reports them",
+  );
+  check(
+    runChecks(informationalOnly, ctx).filter((i) => isDefect(i.code)).length === 0,
+    "but counts as clean, because there is nothing to fix",
   );
 } finally {
   built.cleanup();
