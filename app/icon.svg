@@ -12,6 +12,13 @@
     rasterises it into favicon.ico and apple-icon.png, so keep this file valid
     XML: no double hyphen inside this comment, or sharp cannot parse it.
   -->
+  <!--
+    A white ground behind the snail. Transparent looked right on a light tab
+    strip and vanished on a dark one, where the browser paints its own dark
+    background straight through the glyph. Full bleed so the square reads as a
+    deliberate tile rather than a clipped shape.
+  -->
+  <rect x="0" y="0" width="24" height="24" fill="#ffffff" />
   <g fill="none" stroke="#3a7ff3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M2 13a6 6 0 1 0 12 0 4 4 0 1 0-8 0 2 2 0 0 0 4 0" />
     <circle cx="10" cy="13" r="8" />
