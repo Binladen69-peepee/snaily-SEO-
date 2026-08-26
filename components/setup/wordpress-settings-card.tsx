@@ -5,17 +5,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { WordPressLogo } from "@/components/brand-logos";
+import { CardHeading } from "@/components/setup/card-heading";
 import { ConnectorPanel } from "@/components/setup/connector-panel";
 import { HealthIcon, healthBadge } from "@/components/setup/health-badge";
 import { useSetup } from "@/components/setup/setup-provider";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import type { SetupSnapshot } from "@/lib/setup/state";
 import { cn } from "@/lib/utils";
 
@@ -69,15 +65,11 @@ export function WordpressSettingsCard({
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">WordPress connector</CardTitle>
-            <CardDescription>
-              Optional. Send to WordPress and post sync need this plugin.
-              Everything else in Snaily SEO works without it.
-            </CardDescription>
-          </div>
+      <CardHeading
+        icon={<WordPressLogo className="size-5 text-[#21759b] dark:text-[#5ba7cf]" />}
+        title="WordPress"
+        description="Sends drafts to your site and syncs published posts back. Optional — everything else in Snaily SEO works without it."
+        status={
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
@@ -87,8 +79,8 @@ export function WordpressSettingsCard({
             <HealthIcon health={health} className="size-3.5" />
             {tone.label}
           </span>
-        </div>
-      </CardHeader>
+        }
+      />
       <CardContent className="space-y-3">
         {health === "connected" ? (
           <p className="text-sm text-muted-foreground">

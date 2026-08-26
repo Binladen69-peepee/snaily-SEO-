@@ -1,22 +1,17 @@
 "use client";
 
-import { ArrowLeft, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Globe, Loader2, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ProjectDialog } from "@/components/project-dialog";
+import { CardHeading } from "@/components/setup/card-heading";
 import { WordpressSettingsCard } from "@/components/setup/wordpress-settings-card";
 import { WordpressTemplateCard } from "@/components/setup/wp-template-card";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +56,12 @@ export function ProjectSettings({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    /*
+     * No max-width here. This used to be max-w-2xl inside a max-w-3xl page, so
+     * the Google card rendered as a sibling was visibly wider than everything
+     * above it. The page owns the measure; every card fills it.
+     */
+    <div className="space-y-4">
       <div>
         <Button variant="ghost" size="sm" asChild className="-ml-2 mb-2">
           <Link href="/projects">
@@ -72,26 +72,43 @@ export function ProjectSettings({
         <h1 className="text-2xl font-semibold tracking-tight">
           {project.name}
         </h1>
-        <p className="text-sm text-muted-foreground">Project settings</p>
+        <p className="text-sm text-muted-foreground">
+          Everything this project connects to, and what each connection is for.
+        </p>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Details</CardTitle>
-        </CardHeader>
+        <CardHeading
+          icon={<Globe className="size-4.5" aria-hidden />}
+          title="Website"
+          description="The site every audit, crawl and draft in this project points at."
+        />
         <CardContent className="space-y-4">
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Website name</dt>
-              <dd className="font-medium">{project.name}</dd>
+          <dl className="grid gap-4 text-sm sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Name</dt>
+              <dd className="mt-0.5 font-medium">{project.name}</dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Website URL</dt>
-              <dd className="font-medium break-all">{project.url}</dd>
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">URL</dt>
+              <dd className="mt-0.5 min-w-0">
+                <a
+                  href={project.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium break-all text-primary hover:underline"
+                >
+                  {project.url.replace(/^https?:\/\//, "")}
+                </a>
+              </dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Description</dt>
-              <dd className={project.description ? "" : "text-muted-foreground"}>
+            <div className="min-w-0 sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Description</dt>
+              <dd
+                className={
+                  project.description ? "mt-0.5" : "mt-0.5 text-muted-foreground"
+                }
+              >
                 {project.description || "None"}
               </dd>
             </div>
@@ -99,6 +116,7 @@ export function ProjectSettings({
 
           <Button
             variant="outline"
+            size="sm"
             onClick={() => {
               setEditing(true);
             }}
@@ -116,19 +134,17 @@ export function ProjectSettings({
         connected={snapshot?.wordpress.health === "connected"}
       />
 
-      <Card className="border-destructive/40">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">
-            Delete project
-          </CardTitle>
-          <CardDescription>
-            Permanently removes this project and all of its data. This cannot be
-            undone.
-          </CardDescription>
-        </CardHeader>
+      <Card className="border-destructive/30">
+        <CardHeading
+          tone="danger"
+          icon={<Trash2 className="size-4.5" aria-hidden />}
+          title="Delete project"
+          description="Permanently removes this project and all of its data. This cannot be undone."
+        />
         <CardContent>
           <Button
             variant="destructive"
+            size="sm"
             onClick={() => {
               setConfirmText("");
               setConfirming(true);

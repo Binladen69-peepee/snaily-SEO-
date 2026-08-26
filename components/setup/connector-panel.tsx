@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { WordPressLogo } from "@/components/brand-logos";
 import { Button } from "@/components/ui/button";
 import {
   CONNECTOR_DOWNLOAD_PATH,
@@ -121,12 +122,16 @@ export function ConnectorPanel({
   return (
     <div
       data-testid="connector-panel"
-      className={cn("rounded-lg border border-border p-4", className)}
+      className={cn(
+        "rounded-lg border border-border bg-muted/30 p-4",
+        className,
+      )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-sm font-medium">
-            <Plug className="size-4 text-muted-foreground" aria-hidden />
+            {/* WordPress's own mark, the same one the card above uses. */}
+            <WordPressLogo className="size-4 shrink-0 text-[#21759b] dark:text-[#5ba7cf]" />
             WordPress Connector
             {projectName !== undefined && (
               <span className="truncate text-muted-foreground">· {projectName}</span>

@@ -39,7 +39,12 @@ export default async function ProjectSettingsPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    /*
+     * One measure for the whole screen. ProjectSettings used to impose its own
+     * narrower width, so the Google card below it rendered wider and the page
+     * read as two stacks rather than one.
+     */
+    <div className="mx-auto max-w-3xl space-y-4 pb-10">
       <ProjectSettings project={project} snapshot={snapshot} />
       <GoogleProperties
         projectId={id}

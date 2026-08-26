@@ -4,7 +4,10 @@ import { Check, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { GoogleLogo } from "@/components/brand-logos";
+import { CardHeading } from "@/components/setup/card-heading";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 
 type Option = { id: string; name: string };
@@ -132,13 +135,19 @@ export function GoogleProperties({
 
   if (googleEmail === null) {
     return (
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold">Google data</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Sign in with Google to link Search Console and Analytics. One sign-in
-          covers every project — you will not be asked again.
-        </p>
-        <Button asChild size="sm" className="mt-3">
+      <Card>
+        <CardHeading
+          icon={<GoogleLogo className="size-4.5" />}
+          title="Google"
+          description="Links Search Console and Analytics so Snaily can show real clicks, impressions and traffic per page. One sign-in covers every project."
+          status={
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              Not connected
+            </span>
+          }
+        />
+        <CardContent>
+        <Button asChild size="sm">
           <a href="/api/auth/google?next=/projects">Continue with Google</a>
         </Button>
 
@@ -163,7 +172,8 @@ export function GoogleProperties({
             {callbackUrl}
           </code>
         </details>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -204,14 +214,19 @@ export function GoogleProperties({
   );
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold">Google data</h3>
-          <p className="text-xs text-muted-foreground">
-            Signed in as {googleEmail}
-          </p>
-        </div>
+    <Card>
+      <CardHeading
+        icon={<GoogleLogo className="size-4.5" />}
+        title="Google"
+        description={<>Search Console and Analytics, signed in as {googleEmail}.</>}
+        status={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+            Connected
+          </span>
+        }
+      />
+      <CardContent>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -266,6 +281,7 @@ export function GoogleProperties({
           </Button>
         </div>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

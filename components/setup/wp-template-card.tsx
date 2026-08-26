@@ -5,13 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { WordPressLogo } from "@/components/brand-logos";
+import { CardHeading } from "@/components/setup/card-heading";
+import { Card, CardContent } from "@/components/ui/card";
 
 /**
  * Which WordPress post the Drafter duplicates on Send to WordPress.
@@ -101,15 +97,11 @@ export function WordpressTemplateCard({
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Blog post template</CardTitle>
-            <CardDescription>
-              Send to WordPress duplicates this post and fills its sections. The
-              template itself is never edited or published.
-            </CardDescription>
-          </div>
+      <CardHeading
+        icon={<WordPressLogo className="size-5 text-[#21759b] dark:text-[#5ba7cf]" />}
+        title="Blog post template"
+        description="Send to WordPress duplicates this post and fills its sections. The template itself is never edited or published."
+        status={
           <Button
             variant="ghost"
             size="sm"
@@ -123,8 +115,8 @@ export function WordpressTemplateCard({
               <RefreshCw className="size-4" aria-hidden />
             )}
           </Button>
-        </div>
-      </CardHeader>
+        }
+      />
 
       <CardContent className="space-y-3">
         {data === null ? (
