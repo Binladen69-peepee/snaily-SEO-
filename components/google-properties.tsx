@@ -42,6 +42,16 @@ export function GoogleProperties({
   /** Null when the user signed in with a password rather than Google. */
   googleEmail: string | null;
 }) {
+  /*
+   * The callback this deployment sends to Google. Read from the browser's own
+   * origin so it matches whatever host the user is actually on — localhost,
+   * a preview URL or production — which is the value Google compares against.
+   */
+  const callbackUrl =
+    typeof window === "undefined"
+      ? "/api/google/callback"
+      : `${window.location.origin}/api/google/callback`;
+
   const [links, setLinks] = useState(initial);
   const [props, setProps] = useState<Properties | null>(null);
   const [loading, setLoading] = useState(false);
@@ -131,6 +141,28 @@ export function GoogleProperties({
         <Button asChild size="sm" className="mt-3">
           <a href="/api/auth/google?next=/projects">Continue with Google</a>
         </Button>
+
+        {/*
+          The callback URL, shown because Google will not show it.
+
+          "Error 400: redirect_uri_mismatch" names no URL, so the only way to
+          fix it is to know exactly what this deployment sends and paste that
+          into the OAuth client. It is derived from the current origin, so this
+          is correct on localhost, on a preview and in production without any
+          configuration.
+        */}
+        <details className="mt-3 text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">
+            Getting “redirect_uri_mismatch”?
+          </summary>
+          <p className="mt-2">
+            Add this exact URL to your Google Cloud OAuth client, under
+            Authorized redirect URIs:
+          </p>
+          <code className="mt-1 block break-all rounded bg-muted px-2 py-1 font-mono text-foreground">
+            {callbackUrl}
+          </code>
+        </details>
       </div>
     );
   }
