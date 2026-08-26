@@ -7,6 +7,7 @@ import {
   Eye,
   FileUp,
   History,
+  ImagePlus,
   Loader2,
   PanelRight,
   PenLine,
@@ -1042,19 +1043,27 @@ ${htmlBody}
                 : "hidden border-t xl:relative xl:flex",
             )}
           >
-            <div className="flex items-start justify-between gap-2 border-b border-border p-3">
+            <div className="space-y-2.5 border-b border-border p-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Keyword
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Target keyword
                 </p>
-                <p className="truncate font-semibold" title={article.keyword}>
+                <p
+                  className="mt-0.5 truncate text-[15px] font-semibold leading-tight"
+                  title={article.keyword}
+                >
                   {article.keyword}
                 </p>
               </div>
 
+              {/*
+                Status sits on its own line. Sharing a row with the keyword
+                squeezed both: the keyword truncated early and the select never
+                had room for its longest label.
+              */}
               <SearchableSelect
                 size="sm"
-                className="w-[8.5rem] shrink-0"
+                className="w-full"
                 aria-label="Article status"
                 value={status === "preparing" ? "draft" : status}
                 options={ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => ({
@@ -1069,20 +1078,33 @@ ${htmlBody}
               />
             </div>
 
-            <div className="flex gap-1 overflow-x-auto border-b border-border px-2 py-2">
+            {/*
+              Seven tabs do not fit across 22.5rem, and an overflow scroller put
+              a scrollbar through the middle of the panel while hiding half the
+              tabs behind a swipe. They wrap instead: two tidy rows, everything
+              reachable, no scrollbar.
+            */}
+            <div
+              role="tablist"
+              aria-label="Research panel"
+              className="flex flex-wrap gap-1 border-b border-border bg-muted/30 p-2"
+            >
               {TABS.map((t) => (
                 <button
                   key={t.id}
                   type="button"
+                  role="tab"
                   onClick={() => {
                     setTab(t.id);
                   }}
+                  aria-selected={tab === t.id}
                   aria-current={tab === t.id ? "true" : undefined}
                   className={cn(
-                    "shrink-0 rounded-full px-3 py-1 text-xs transition-colors",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     tab === t.id
-                      ? "bg-primary font-medium text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
                   )}
                 >
                   {t.label}
@@ -1140,41 +1162,48 @@ ${htmlBody}
             )}
 
             {!researching && brief !== null && (
-              <div className="border-b border-border px-3 py-2.5">
+              <div className="border-b border-border px-3 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Search Research
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Search research
                   </p>
-                  <p className="text-xs font-medium">
+                  {/*
+                    A bare "DataForSEO ✓" read as decoration. A tinted pill says
+                    the same thing as state: which provider answered, and
+                    whether this came off the wire or out of the cache.
+                  */}
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                      searchResearch.available
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-border bg-muted text-muted-foreground",
+                    )}
+                  >
                     {searchResearch.providerLabel}
-                    {searchResearch.available ? " ✓" : ""}
                     {searchResearch.cacheHit ? " · cached" : ""}
-                  </p>
+                  </span>
                 </div>
                 {searchResearch.available ? (
-                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Top results</dt>
-                      <dd className="tabular font-medium">
-                        {searchResearch.topResults}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">PAA questions</dt>
-                      <dd className="tabular font-medium">{searchResearch.paa}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">SERP features</dt>
-                      <dd className="tabular font-medium">
-                        {searchResearch.serpFeatures}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Related searches</dt>
-                      <dd className="tabular font-medium">
-                        {searchResearch.relatedSearches}
-                      </dd>
-                    </div>
+                  <dl className="mt-2.5 grid grid-cols-2 gap-1.5">
+                    {[
+                      ["Top results", searchResearch.topResults],
+                      ["PAA questions", searchResearch.paa],
+                      ["SERP features", searchResearch.serpFeatures],
+                      ["Related", searchResearch.relatedSearches],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-md border border-border bg-muted/40 px-2 py-1.5"
+                      >
+                        <dd className="tabular text-sm font-semibold leading-none">
+                          {value}
+                        </dd>
+                        <dt className="mt-1 text-[10px] leading-none text-muted-foreground">
+                          {label}
+                        </dt>
+                      </div>
+                    ))}
                   </dl>
                 ) : (
                   <p className="mt-1.5 text-xs text-muted-foreground">
@@ -1554,59 +1583,66 @@ ${htmlBody}
 
               {tab === "meta" && (
                 <div className="p-3">
-                  <div className="mb-3 grid grid-cols-3 gap-2 border-b border-border pb-3 text-center">
-                    <div>
-                      <p className="tabular text-lg font-semibold">{words.toLocaleString("en-US")}</p>
-                      <p className="text-[11px] text-muted-foreground">Words</p>
-                    </div>
-                    <div>
-                      <p className="tabular text-lg font-semibold">{minutes}</p>
-                      <p className="text-[11px] text-muted-foreground">Min read</p>
-                    </div>
-                    <div>
-                      <p className={cn("tabular text-lg font-semibold", qualityBand(optimization.percent).className)}>
-                        {optimization.percent}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">SEO</p>
-                    </div>
+                  {/* Three numbers that describe the draft, as tiles rather
+                      than bare figures on a divider. */}
+                  <div className="mb-4 grid grid-cols-3 gap-2">
+                    {[
+                      { value: words.toLocaleString("en-US"), label: "Words", tone: "" },
+                      { value: String(minutes), label: "Min read", tone: "" },
+                      {
+                        value: String(optimization.percent),
+                        label: "SEO score",
+                        tone: qualityBand(optimization.percent).className,
+                      },
+                    ].map((s) => (
+                      <div
+                        key={s.label}
+                        className="rounded-lg border border-border bg-muted/40 px-2 py-2 text-center"
+                      >
+                        <p className={cn("tabular text-lg font-semibold leading-none", s.tone)}>
+                          {s.value}
+                        </p>
+                        <p className="mt-1 text-[10px] leading-none text-muted-foreground">
+                          {s.label}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="mb-1 text-xs font-medium">Status</p>
-                      <SearchableSelect
-                        size="sm"
-                        aria-label="Status"
-                        value={status === "preparing" ? "draft" : status}
-                        options={ARTICLE_STATUSES.filter((s) => s !== "preparing").map((s) => ({
-                          value: s,
-                          label: STATUS_LABEL[s],
-                        }))}
-                        onChange={(next) => {
-                          const value = next as ArticleStatus;
-                          setStatus(value);
-                          void save({ status: value });
-                        }}
-                      />
-                    </div>
-                    <label className="block text-xs font-medium">
-                      Slug
+
+                  {/* Status is not repeated here: it sits at the top of the
+                      panel, where it is visible from every tab. */}
+                  <div className="space-y-3.5">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium">Slug</span>
                       <input
                         value={meta.slug}
                         onChange={(e) => {
                           setMeta((m) => ({ ...m, slug: e.target.value }));
                         }}
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2.5 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     </label>
-                    <label className="block text-xs font-medium">
-                      Excerpt
+                    <label className="block space-y-1">
+                      <span className="flex items-baseline justify-between text-xs font-medium">
+                        Excerpt
+                        <span
+                          className={cn(
+                            "tabular text-[10px] font-normal",
+                            meta.excerpt.length > 160
+                              ? "text-warning"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {meta.excerpt.length}/160
+                        </span>
+                      </span>
                       <textarea
                         value={meta.excerpt}
                         onChange={(e) => {
                           setMeta((m) => ({ ...m, excerpt: e.target.value }));
                         }}
                         rows={3}
-                        className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
+                        className="w-full resize-y rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     </label>
                     <TermSelect
@@ -1629,12 +1665,29 @@ ${htmlBody}
                         setMeta((m) => ({ ...m, tags }));
                       }}
                     />
-                    <label className="block text-xs font-medium">
-                      Featured image
+                    {/*
+                      The browser's own file control rendered as
+                      "Choose File | No file chosen" — unstyled, and it says
+                      nothing about what the file is for. The input is still
+                      there and still does the work; it is just visually
+                      replaced by its own label.
+                    */}
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium">Featured image</span>
+                      <label
+                        className={cn(
+                          "flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-input px-3 py-2.5",
+                          "text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:bg-accent hover:text-foreground",
+                        )}
+                      >
+                        <ImagePlus className="size-4 shrink-0" aria-hidden />
+                        {meta.featuredImageUrl === ""
+                          ? "Upload a JPG, PNG or WebP"
+                          : "Replace image"}
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
-                        className="mt-1 block w-full text-xs"
+                        className="sr-only"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           e.target.value = "";
@@ -1658,17 +1711,20 @@ ${htmlBody}
                           })();
                         }}
                       />
-                    </label>
-                    {meta.featuredImageUrl !== "" && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={meta.featuredImageUrl}
-                        alt=""
-                        className="mt-1 max-h-32 rounded-md border border-border object-cover"
-                      />
-                    )}
-                    <label className="block text-xs font-medium">
-                      Protected vocabulary
+                      </label>
+                      {meta.featuredImageUrl !== "" && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={meta.featuredImageUrl}
+                          alt=""
+                          className="max-h-32 w-full rounded-md border border-border object-cover"
+                        />
+                      )}
+                    </div>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium">
+                        Protected vocabulary
+                      </span>
                       <input
                         value={meta.protectedVocab.join(", ")}
                         onChange={(e) => {
@@ -1681,8 +1737,11 @@ ${htmlBody}
                           }));
                         }}
                         placeholder="mücver, yalanji, za’atar"
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
+                      <span className="block text-[10px] text-muted-foreground">
+                        Words the proofreader must never “correct”.
+                      </span>
                     </label>
                   </div>
                 </div>
