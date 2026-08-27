@@ -64,3 +64,6 @@ next-env.d.ts
 .dfse2e-*
 .reprocrawl-*
 poll-tmp.mjs
+
+# ad-hoc probe scripts written at the repo root during debugging
+/.[a-z]*.mjs

@@ -1,4 +1,12 @@
-/** Responsive verification at the four widths, against a real logged-in app. */
+/**
+ * Responsive and keyboard verification, driven through a real browser.
+ *
+ * playwright-core with the Edge that ships with Windows, so no browser needed
+ * downloading. Signs in by minting the same session JWT the app issues, which
+ * is the only way to reach these screens at all.
+ *
+ *   TARGET=https://... node scripts/verify-responsive.mjs
+ */
 import { chromium } from "playwright-core";
 import { PrismaClient } from "@prisma/client";
 import { SignJWT } from "jose";
@@ -46,5 +54,39 @@ for (const [path, name] of PAGES) {
     await ctx.close();
   }
 }
+
+/* ---- Keyboard reachability ------------------------------------------- */
+console.log("\nKeyboard navigation @1024");
+for (const [path, name] of PAGES) {
+  const ctx = await browser.newContext({ viewport: { width: 1024, height: 900 } });
+  await ctx.addCookies([{ name: "session", value: token, domain: HOST, path: "/", secure: SECURE, httpOnly: true, sameSite: "Lax" }]);
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}${path}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+  await page.waitForTimeout(600);
+
+  // Tab through the first stretch and confirm focus actually moves and is visible.
+  const seen = new Set();
+  let visibleRing = 0;
+  for (let i = 0; i < 15; i++) {
+    await page.keyboard.press("Tab");
+    const info = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return {
+        key: `${el.tagName}:${(el.textContent ?? "").trim().slice(0, 18)}`,
+        onScreen: r.width > 0 && r.height > 0,
+        ring: cs.outlineStyle !== "none" || cs.boxShadow !== "none",
+      };
+    }).catch(() => null);
+    if (info) { seen.add(info.key); if (info.ring && info.onScreen) visibleRing += 1; }
+  }
+  const ok = seen.size >= 5 && visibleRing > 0;
+  if (!ok) fail++;
+  console.log(`  ${name.padEnd(21)} ${seen.size} focus stops, ${visibleRing} with a visible ring  ${ok ? "ok" : "PROBLEM"}`);
+  await ctx.close();
+}
+
 await browser.close();
 console.log(fail === 0 ? "\nNo horizontal overflow at any width.\n" : `\n${fail} problem(s)\n`);
