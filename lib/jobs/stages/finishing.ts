@@ -28,6 +28,7 @@ import {
   resolveCategories,
   type SiteTerm,
 } from "@/lib/drafter/categories";
+import { evidenceFrom, gateCuisines } from "@/lib/drafter/cuisine-gate";
 import { factBuckets, styleContext } from "@/lib/drafter/context-buckets";
 import { providerDisplayName, researchSliceForSections } from "@/lib/drafter/research";
 import { briefFor } from "@/lib/drafter/voice";
@@ -299,13 +300,48 @@ export async function metadata(ctx: StageContext): Promise<StageResult> {
     ? resolveCategories(raw, siteCategories, siteTags)
     : { categories: [], tags: [], rejected: [] };
 
+  /*
+   * A category has to be true, not merely real.
+   *
+   * Every name above already exists on the site, which is what the check was
+   * for and is not enough: a Vietnamese banh mi went out filed under Mexican,
+   * Thai and Italian, all three real shelves, none of them mentioned once in
+   * its own text. The recipe card then derives its cuisine from these, so a
+   * wrong shelf becomes a wrong factual claim in structured data.
+   *
+   * The article's own words are the evidence. A cuisine it never mentions is
+   * dropped; the one it argues for repeatedly is used instead.
+   */
+  const evidence = evidenceFrom({
+    title: workingTitle,
+    keyword: article.keyword ?? "",
+    recipe: article.recipe ?? "",
+    html,
+  });
+
+  // What the dish IS, separate from what the prose says it goes with.
+  const identity = [workingTitle, article.keyword ?? "", article.recipe ?? ""].join(
+    " ",
+  );
+
+  const gated = wantsTerms
+    ? gateCuisines(terms.categories, siteCategories, evidence, identity)
+    : { categories: terms.categories, dropped: [], added: null };
+
+  if (gated.dropped.length > 0 || gated.added !== null) {
+    ctx.log("cuisine_gate", {
+      dropped: gated.dropped.map((d) => d.name).join(",") || "none",
+      added: gated.added ?? "none",
+    });
+  }
+
   state.metadata = {
     workingTitle,
     seoTitle: firstLine(field("SEO_TITLE") || workingTitle, 60),
     metaDescription: firstLine(field("DESCRIPTION"), 160),
     slug,
     excerpt: firstLine(field("EXCERPT"), 200),
-    categories: terms.categories,
+    categories: gated.categories,
     tags: terms.tags,
     rejectedTerms: terms.rejected,
   };

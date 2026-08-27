@@ -50,8 +50,41 @@ export type TermMatch = { start: number; end: number; text: string };
  * written out as "not a word character or hyphen" on each side. That is what
  * stops "tamari" matching inside "tamarind".
  */
+/** Characters prose substitutes for a plain hyphen. */
+const DASHES = "[-" + [0x2010, 0x2011, 0x2012, 0x2013, 0x2014]
+  .map((c) => String.fromCodePoint(c))
+  .join("") + "]";
+
+/** Straight and curly apostrophes. */
+const APOSTROPHES = "['" + String.fromCodePoint(0x2018) +
+  String.fromCodePoint(0x2019) + "]";
+
+/** A space in a title may be any whitespace run, including a non-breaking one. */
+const GAP = String.raw`(?:\s|&nbsp;|\u00a0)+`;
+
+/**
+ * A pattern that matches a recipe title as prose actually writes it.
+ *
+ * Post titles are stored with plain ASCII; the prose that mentions them is
+ * typeset. "Super-Crispy Batata Harra Recipe" is a real published post, and
+ * the draft naming it wrote Super, then a NON-BREAKING hyphen, then Crispy.
+ * A different character, so the literal search found nothing and that mention
+ * went unlinked while its neighbours in the same sentence linked fine.
+ *
+ * Every substitution widens one character into a class of equivalents, so
+ * offsets into the haystack are unchanged and the matched text is still
+ * exactly what the prose wrote.
+ */
+function flexibleTerm(term: string): string {
+  return escapeRe(term)
+    // Hyphen, non-breaking hyphen, figure dash, en dash, em dash.
+    .replace(/-/g, DASHES)
+    .replace(/'/g, APOSTROPHES)
+    .replace(/ /g, GAP);
+}
+
 export function findTermMatch(html: string, term: string): TermMatch | null {
-  const re = new RegExp(`(^|[^\\w-])(${escapeRe(term)})(?![\\w-])`, "i");
+  const re = new RegExp(`(^|[^\\w-])(${flexibleTerm(term)})(?![\\w-])`, "i");
 
   for (const run of editableRuns(html)) {
     const hit = re.exec(html.slice(run.from, run.to));
