@@ -21,6 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SERVICES } from "@/lib/integrations-catalog";
 import { affectedNow } from "@/lib/integrations-impact";
+import { GoogleLogo } from "@/components/brand-logos";
+import { ProviderCard } from "@/components/integrations/provider-card";
+import { PROVIDERS } from "@/lib/integrations/providers";
 import type { SettingView } from "@/lib/settings";
 import type { HealthCheck } from "@/lib/settings-health";
 import { cn } from "@/lib/utils";
@@ -397,6 +400,41 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
             ))}
           </div>
         )}
+      </section>
+
+      {/* ---------------- providers ---------------- */}
+      {/*
+        One card per provider, holding every field that provider needs. The
+        grid above still lists infrastructure checks that are not credential
+        pairs; this section is the part an owner comes here to edit.
+      */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Providers</h2>
+          <p className="text-xs text-muted-foreground">
+            Saved here, encrypted, and used by the next request — no deploy
+            needed. A replacement that fails verification is not saved.
+          </p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {PROVIDERS.map((provider) => {
+            const owned = settings.filter((s) => provider.keys.includes(s.key));
+            if (owned.length === 0) return null;
+            return (
+              <ProviderCard
+                key={provider.id}
+                provider={provider}
+                settings={owned}
+                logo={
+                  provider.id === "google" ? (
+                    <GoogleLogo className="size-4.5" />
+                  ) : undefined
+                }
+                onSaved={setSettings}
+              />
+            );
+          })}
+        </div>
       </section>
 
       {/* ---------------- footer ---------------- */}

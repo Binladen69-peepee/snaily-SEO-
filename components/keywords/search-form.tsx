@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { KeywordTypeahead } from "@/components/keywords/keyword-typeahead";
 import {
   COUNTRIES,
   SEARCH_MODE_LABEL,
@@ -31,9 +31,9 @@ export function SearchForm({
   const [country, setCountry] = useState(params.get("country") ?? "us");
   const [mode, setMode] = useState(params.get("mode") ?? "related");
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const q = keyword.trim();
+  /** One path for both a typed Enter and a chosen suggestion. */
+  function search(raw: string) {
+    const q = raw.trim();
     if (q === "") return;
 
     // A new search resets filters and pagination. Stays on the current tool —
@@ -43,21 +43,26 @@ export function SearchForm({
     router.push(`${pathname}?${next.toString()}`);
   }
 
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    search(keyword);
+  }
+
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
-      <div className="relative flex-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value);
-          }}
-          placeholder={placeholder}
-          aria-label="Keyword"
-          className="h-10 pl-9"
-          maxLength={200}
-        />
-      </div>
+      {/*
+        The typeahead owns its own input and search icon. Enter searches what
+        is typed; arrow keys walk the suggestions and Enter takes the
+        highlighted one — both land in the same search().
+      */}
+      <KeywordTypeahead
+        className="flex-1"
+        value={keyword}
+        country={country}
+        placeholder={placeholder}
+        onChange={setKeyword}
+        onSelect={search}
+      />
 
       <select
         value={country}

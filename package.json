@@ -31,6 +31,7 @@
     "test:draft-export": "node --env-file=.env scripts/test-draft-export.mjs",
     "test:style": "node scripts/test-style.mjs",
     "test:content-audit": "node scripts/test-content-audit.mjs",
+    "test:integrations": "node scripts/test-integrations.mjs",
     "test:runtime-settings": "node scripts/test-runtime-settings.mjs",
     "test:control-panel": "node scripts/test-control-panel.mjs",
     "test:document": "node scripts/test-document.mjs",
