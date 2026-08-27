@@ -115,18 +115,53 @@ Vercel serves those chunks correctly.
   loses the cascade. That is what made `.scroll-x` compute to
   `overflow-x: visible`.
 
+## Backing this up (do this first)
+
+There is no git remote. The full history is bundled at:
+
+```
+~/snaily-backup/snaily-seo-complete.bundle     (verified complete, 1.4 MB)
+```
+
+A bundle is a clone source, so that one file is a working backup:
+
+```bash
+git clone ~/snaily-backup/snaily-seo-complete.bundle recovered-snaily
+```
+
+To put it on GitHub — **create the repository as PRIVATE** (see the secret note
+below), then:
+
+```bash
+git remote add origin https://github.com/<you>/snaily-seo.git
+git push -u origin master
+git push origin --all && git push origin --tags
+git ls-remote origin          # confirm the remote has every ref
+```
+
+Nothing in the working tree contains a secret: `.env` and `.env.local` are
+ignored, `.env.example` holds placeholders only, and a scan of every tracked
+file for `GOCSPX-`, `sk-`, `xoxb-`, `AIza` and private-key headers is clean.
+
+### One secret is in git history
+
+Commit `1708eb8` contains a real Google client secret for the **877448…**
+client, in `.env.example`, commented out. It was removed from the working tree
+but history was deliberately not rewritten.
+
+**Revoke that secret in Google Cloud.** It is not the client the app uses
+(`791613…` is), so revoking it changes nothing operationally. Until it is
+revoked, keep the repository private.
+
+If you would rather purge it than revoke it, `git filter-repo --replace-text`
+over that one file works — but rewriting history invalidates the bundle above
+and any clone, so revoke first and treat rewriting as optional.
+
 ## Open items
 
-- **No git remote.** 22 commits exist only on this machine. Create a repo and
-  push; until then a disk failure loses the project.
-- **Rotate the `877448123722-…` Google client secret.** It was committed in
-  `.env.example` and remains in git history. Not the client in use, but it
-  should be revoked.
-- **Drafter category assignment is unreliable.** A Vietnamese bánh mì draft was
-  filed under Mexican / Thai / Italian. Card fields derive faithfully from those
-  categories, so the wrong category becomes the wrong cuisine.
-- **Internal links are inconsistently applied.** Some dish mentions in generated
-  prose are linked, some are not. Root cause not yet established.
+- **No git remote.** See "Backing this up" above — the bundle is a stopgap, not
+  a substitute for pushing somewhere.
+- **Revoke the `877448…` Google client secret** (details above).
 - **The media-alt fix has never written a new value in production**, because the
   site has no genuine missing-alt image (30 posts, 433 content images, zero
   missing). It is verified through a no-op write and 30 unit tests.
