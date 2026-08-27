@@ -605,6 +605,46 @@ export async function listMedia(
   };
 }
 
+/**
+ * Set alt text on one media item, and confirm it stuck.
+ *
+ * The connector reads the meta back after writing and returns it, so this can
+ * report `persisted` rather than inferring success from a 200. `unchanged`
+ * distinguishes "already had this exact alt" from "we just changed it", which
+ * is what makes a repeated fix idempotent instead of merely harmless.
+ *
+ * Needs connector 1.5.0; older installs answer 404 on this route, which the
+ * caller surfaces as "update the connector" rather than as a failed fix.
+ */
+export async function setMediaAlt(
+  siteUrl: string,
+  token: string,
+  mediaId: number,
+  alt: string,
+): Promise<{
+  id: number;
+  url: string;
+  before: string;
+  alt: string;
+  persisted: boolean;
+  unchanged: boolean;
+}> {
+  const raw = await call<Record<string, unknown>>(
+    siteUrl,
+    token,
+    `/media/${String(mediaId)}/alt`,
+    { method: "POST", body: { alt }, missing: "route" },
+  );
+  return {
+    id: num(raw.id),
+    url: str(raw.url),
+    before: str(raw.before),
+    alt: str(raw.alt),
+    persisted: raw.persisted === true,
+    unchanged: raw.unchanged === true,
+  };
+}
+
 export async function uploadMedia(
   siteUrl: string,
   token: string,

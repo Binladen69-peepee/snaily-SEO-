@@ -119,6 +119,7 @@ export async function runAudit(
           lastModified: p.lastModified !== null ? new Date(p.lastModified) : null,
           imagesTotal: p.imagesTotal,
           imagesMissingAlt: p.imagesMissingAlt,
+          imagesMissingAltSrc: p.imagesMissingAltSrc,
           imagesDecorative: p.imagesDecorative,
           imagesChrome: p.imagesChrome,
           internalLinkCount: p.internalLinks.length,

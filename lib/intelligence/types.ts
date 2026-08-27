@@ -10,6 +10,8 @@ export type PageSnapshot = {
   wordCount: number;
   internalLinkCount: number;
   brokenLinks: string[];
+  /** Images this audit flagged, so the fix panel has real targets. */
+  imagesMissingAltSrc: string[];
   lastModified: string | null;
   issues: Issue[];
 };

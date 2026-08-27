@@ -41,6 +41,8 @@ export type CrawledPage = {
   imagesTotal: number;
   /** Content images with no alt attribute at all. */
   imagesMissingAlt: number;
+  /** The src of each of those images, so a fix can name its target. */
+  imagesMissingAltSrc: string[];
   /** Images correctly marked decorative. Reported, never a defect. */
   imagesDecorative: number;
   /** Images belonging to site furniture rather than this page's content. */

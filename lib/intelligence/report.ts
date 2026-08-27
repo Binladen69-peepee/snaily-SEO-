@@ -30,6 +30,7 @@ type PageRow = {
   wordCount: number;
   internalLinkCount: number;
   brokenLinks: string[];
+  imagesMissingAltSrc: string[];
   lastModified: Date | null;
   issues: unknown;
 };
@@ -48,6 +49,7 @@ function toSnapshot(doc: PageRow): PageSnapshot {
     wordCount: doc.wordCount,
     internalLinkCount: doc.internalLinkCount,
     brokenLinks: doc.brokenLinks,
+    imagesMissingAltSrc: doc.imagesMissingAltSrc,
     lastModified: doc.lastModified?.toISOString() ?? null,
     issues: parseIssues(doc.issues),
   };

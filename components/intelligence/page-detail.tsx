@@ -17,6 +17,7 @@ import {
   type Effort,
 } from "@/lib/intelligence/recommendations";
 import type { PageIntel } from "@/lib/intelligence/types";
+import { AltFixPanel } from "@/components/intelligence/alt-fix-panel";
 
 const EFFORT_VARIANT: Record<Effort, "success" | "warning" | "destructive"> = {
   quick: "success",
@@ -36,6 +37,18 @@ const SEVERITY_COLOR = {
   low: "text-muted-foreground",
 } as const;
 
+/**
+ * Whether an issue is something to act on.
+ *
+ * Informational rows already say "nothing to do" in their own words; adding
+ * "Review manually" under them would turn a reassurance into a chore.
+ */
+function isDefectCode(code: string): boolean {
+  return !["decorative_image", "blocked_internal_link", "page_unreachable"].includes(
+    code,
+  );
+}
+
 function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:gap-2">
@@ -45,7 +58,14 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function PageDetail({ page }: { page: PageIntel }) {
+export function PageDetail({
+  page,
+  auditId,
+}: {
+  page: PageIntel;
+  /** Needed to fix anything; absent means the panel simply does not render. */
+  auditId?: string;
+}) {
   const actions = [...page.issues].sort(
     (a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity],
   );
@@ -126,6 +146,29 @@ export function PageDetail({ page }: { page: PageIntel }) {
                     </div>
                     <p className="text-sm">{rec.action}</p>
                     <p className="text-xs text-muted-foreground">{rec.why}</p>
+
+                    {/*
+                      One issue can be fixed from here, and only because the
+                      author writes the words. Everything else is labelled for
+                      what it is: a decision, not a button.
+                    */}
+                    {issue.code === "missing_alt" &&
+                    auditId !== undefined &&
+                    page.imagesMissingAltSrc.length > 0 ? (
+                      <div className="pt-1">
+                        <AltFixPanel
+                          auditId={auditId}
+                          pageUrl={page.url}
+                          images={page.imagesMissingAltSrc}
+                        />
+                      </div>
+                    ) : (
+                      isDefectCode(issue.code) && (
+                        <p className="pt-0.5 text-[11px] font-medium text-muted-foreground">
+                          Review manually
+                        </p>
+                      )
+                    )}
                   </div>
                 </li>
               );

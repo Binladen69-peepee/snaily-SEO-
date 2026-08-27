@@ -36,6 +36,15 @@ export type ImageAudit = {
   decorative: number;
   /** Images belonging to site chrome rather than the page's own content. */
   chrome: number;
+  /**
+   * The `src` of each content image with no alt attribute.
+   *
+   * A count alone says a page has a problem; it does not say which image, and
+   * a fix has to name the thing it is fixing. These are the exact sources the
+   * audit objected to, so the media item behind each one can be found and
+   * given alt text.
+   */
+  missingAltSrc: string[];
 };
 
 /**
@@ -166,7 +175,13 @@ export function auditImages($: CheerioAPI): ImageAudit {
 
   const images = (root ?? $("body")).find("img");
 
-  const out: ImageAudit = { total: 0, missingAlt: 0, decorative: 0, chrome: 0 };
+  const out: ImageAudit = {
+    total: 0,
+    missingAlt: 0,
+    decorative: 0,
+    chrome: 0,
+    missingAltSrc: [],
+  };
 
   images.each((_, node) => {
     const el = $(node) as Cheerio<Element>;
@@ -183,7 +198,13 @@ export function auditImages($: CheerioAPI): ImageAudit {
 
     out.total += 1;
     // Content image with no alt attribute at all: the genuine defect.
-    if (attr(el, "alt") === undefined) out.missingAlt += 1;
+    if (attr(el, "alt") === undefined) {
+      out.missingAlt += 1;
+      const src = attr(el, "src") ?? attr(el, "data-src") ?? "";
+      if (src !== "" && !out.missingAltSrc.includes(src)) {
+        out.missingAltSrc.push(src);
+      }
+    }
   });
 
   return out;

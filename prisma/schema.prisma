@@ -346,6 +346,8 @@ model AuditPage {
   imagesTotal       Int       @default(0)
   /// Content images with no alt attribute at all.
   imagesMissingAlt  Int       @default(0)
+  /// The src of each image missing alt, so a fix can name its target.
+  imagesMissingAltSrc String[] @default([])
   /// Images correctly marked decorative (alt="", role=presentation, aria-hidden).
   imagesDecorative  Int       @default(0)
   /// Images belonging to site chrome rather than this page's content.

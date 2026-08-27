@@ -16,7 +16,7 @@ import { buildZip } from "@/lib/wordpress/zip";
  * plugin route has a self-check that the emitted source still parses.
  */
 
-export const PLUGIN_VERSION = "1.4.2";
+export const PLUGIN_VERSION = "1.5.0";
 export const PLUGIN_SLUG = "snaily-seo-connector";
 
 /** REST namespace the app talks to. Must match `SNAILY_SEO_NS` below. */
@@ -250,6 +250,12 @@ function snaily_seo_routes() {
     register_rest_route(SNAILY_SEO_NS, '/media', array(
         'methods'             => 'POST',
         'callback'            => 'snaily_seo_media_upload',
+        'permission_callback' => 'snaily_seo_authorise',
+    ));
+
+    register_rest_route(SNAILY_SEO_NS, '/media/(?P<id>[0-9]+)/alt', array(
+        'methods'             => 'POST',
+        'callback'            => 'snaily_seo_media_set_alt',
         'permission_callback' => 'snaily_seo_authorise',
     ));
 
@@ -1181,6 +1187,70 @@ function snaily_seo_media_list(WP_REST_Request $request) {
         );
     }
     return array('items' => $items, 'pages' => (int) $q->max_num_pages);
+}
+
+/**
+ * Alt text on one media item.
+ *
+ * The narrowest write this plugin performs, and deliberately so. Content
+ * Intelligence audits the *published* site, and everything else here refuses
+ * to touch published content - so a fix for a missing alt could not exist
+ * without a route scoped tightly enough to be obviously safe.
+ *
+ * It is: the target must be an attachment, and the only thing written is
+ * the _wp_attachment_image_alt meta key. No post content, no post status and
+ * no other meta: a backtick here would end the template literal this PHP lives
+ * in, which is why none appear anywhere in this file.
+ * A page's words cannot change through this route, only the accessible name of
+ * an image, which is the thing the audit objected to.
+ *
+ * The stored value is read back and returned, so the caller confirms the change
+ * landed rather than trusting a 200. Writing the same alt twice is a no-op,
+ * which makes the fix safe to retry.
+ */
+function snaily_seo_media_set_alt(WP_REST_Request $request) {
+    $id = (int) $request->get_param('id');
+    $post = get_post($id);
+
+    if (!$post || $post->post_type !== 'attachment') {
+        return new WP_Error(
+            'snaily_not_media',
+            'That media item was not found.',
+            array('status' => 404)
+        );
+    }
+
+    if (!wp_attachment_is_image($id)) {
+        return new WP_Error(
+            'snaily_not_an_image',
+            'Alt text only applies to images.',
+            array('status' => 400)
+        );
+    }
+
+    $alt = sanitize_text_field((string) $request->get_param('alt'));
+    if (strlen($alt) > 500) {
+        return new WP_Error(
+            'snaily_alt_too_long',
+            'Alt text is limited to 500 characters.',
+            array('status' => 400)
+        );
+    }
+
+    $before = (string) get_post_meta($id, '_wp_attachment_image_alt', true);
+    update_post_meta($id, '_wp_attachment_image_alt', $alt);
+    $after = (string) get_post_meta($id, '_wp_attachment_image_alt', true);
+
+    return array(
+        'id'        => $id,
+        'url'       => (string) wp_get_attachment_url($id),
+        'before'    => $before,
+        'alt'       => $after,
+        // The caller compares this with what it sent; a false here means the
+        // write did not persist, whatever the status code said.
+        'persisted' => $after === $alt,
+        'unchanged' => $before === $alt,
+    );
 }
 
 function snaily_seo_media_upload(WP_REST_Request $request) {

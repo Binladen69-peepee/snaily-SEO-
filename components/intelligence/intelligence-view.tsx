@@ -141,11 +141,14 @@ function PageMobileCard({
   open,
   hasPerformance,
   onToggle,
+  auditId,
 }: {
   page: PageIntel;
   open: boolean;
   hasPerformance: boolean;
   onToggle: () => void;
+  /** Which crawl this row came from; a fix has to name it. */
+  auditId: string;
 }) {
   const band = priorityBand(page.priority.score);
   return (
@@ -195,7 +198,7 @@ function PageMobileCard({
       </button>
       {open && (
         <div className="border-t border-border bg-muted/20 px-3 py-4 sm:px-4">
-          <PageDetail page={page} />
+          <PageDetail page={page} auditId={auditId} />
         </div>
       )}
     </div>
@@ -571,6 +574,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
           <div className="space-y-2 md:hidden">
             {visible.map((p) => (
               <PageMobileCard
+                auditId={report.auditId}
                 key={p.url}
                 page={p}
                 open={expanded === p.url}
@@ -671,7 +675,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
                             )}
                           </div>
                           <div className="bg-muted/20 px-3 py-4 sm:px-6 sm:py-5">
-                            <PageDetail page={p} />
+                            <PageDetail page={p} auditId={report.auditId} />
                           </div>
                         </td>
                       </tr>
