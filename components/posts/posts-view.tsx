@@ -11,7 +11,7 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import { useSetup } from "@/components/setup/setup-provider";
 import type { ScoredPost } from "@/lib/content/update-queue";
 import type { ConnectionStatus } from "@/lib/wordpress/sync";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/ui/pagination";
+import { useDebounced } from "@/lib/use-debounced";
 
 type SortId = "priority" | "modified" | "clicks" | "words-asc" | "seo-asc" | "title";
 
@@ -82,6 +84,15 @@ export function PostsView({
   const [sort, setSort] = useState<SortId>("priority");
   const [onlyNeedy, setOnlyNeedy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+
+  /*
+   * The filter runs over every synced post - six hundred on this site - and
+   * re-renders the table. Doing that per keystroke made the search box feel
+   * like it was resisting the typist, so the input stays instant and only the
+   * value the filter reads lags behind.
+   */
+  const debouncedQuery = useDebounced(query, 250);
 
   async function sync(full: boolean) {
     setSyncing(true);
@@ -129,7 +140,7 @@ export function PostsView({
   }
 
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
     const rows = posts.filter((p) => {
       if (type !== "all" && p.type !== type) return false;
       if (state !== "all" && p.status !== state) return false;
@@ -159,7 +170,25 @@ export function PostsView({
           return b.score - a.score || (b.performance?.impressions ?? 0) - (a.performance?.impressions ?? 0);
       }
     });
-  }, [posts, query, type, state, sort, onlyNeedy]);
+  }, [posts, debouncedQuery, type, state, sort, onlyNeedy]);
+
+  /*
+   * Six hundred rows in the DOM is the single biggest cost on this screen, and
+   * nobody reads past the first screenful. The filter still runs over
+   * everything - the counts have to be true - but only a page of it renders.
+   */
+  const PER_PAGE = 25;
+  const totalPages = Math.max(1, Math.ceil(visible.length / PER_PAGE));
+  const current = Math.min(page, totalPages);
+  const pageRows = useMemo(
+    () => visible.slice((current - 1) * PER_PAGE, current * PER_PAGE),
+    [visible, current],
+  );
+
+  // A filter change can leave you on a page that no longer exists.
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery, type, state, sort, onlyNeedy]);
 
   const stats = useMemo(() => {
     const clicks = posts.reduce((s, p) => s + (p.performance?.clicks ?? 0), 0);
@@ -409,7 +438,7 @@ export function PostsView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {visible.map((p) => {
+                {pageRows.map((p) => {
                   const perf = p.performance;
                   const expanded = openId === p.id;
                   return (
@@ -526,6 +555,17 @@ export function PostsView({
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="border-t border-border px-4 py-2.5">
+            <Pagination
+              page={current}
+              totalPages={totalPages}
+              total={visible.length}
+              perPage={PER_PAGE}
+              onPage={setPage}
+              label="posts"
+            />
           </div>
         </div>
       )}

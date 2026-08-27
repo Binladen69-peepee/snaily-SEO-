@@ -141,6 +141,20 @@ async function main() {
     check(php.includes(needle), what);
   }
 
+  /*
+   * 1.5.0: the media alt route. This is the only route that can change
+   * anything on a published site, so the archive is checked for both the
+   * route and the guards that keep it narrow.
+   */
+  for (const [needle, what] of [
+    ["snaily_seo_media_set_alt", "1.5.0: the media alt route is present"],
+    ["post_type !== 'attachment'", "  and refuses anything that is not an attachment"],
+    ["wp_attachment_is_image", "  and anything that is not an image"],
+    ["'persisted' =>", "  and reads the value back so a caller can confirm it"],
+  ]) {
+    check(php.includes(needle), what);
+  }
+
   const readme = [...files.keys()].find((f) => f.endsWith("readme.txt"));
   check(readme !== undefined, "the archive contains the readme");
   if (readme !== undefined) {
