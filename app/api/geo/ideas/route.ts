@@ -148,7 +148,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ideas: saved.map(serializeIdea),
-      signals: signals.counts,
+      // The screen names the provider, so it has to be told which one answered.
+      signals: { ...signals.counts, provider: signals.provider, cached: signals.cached },
       publishedChecked: published.length,
     });
   } catch (err) {

@@ -25,9 +25,21 @@ export type RawSignal = {
   position?: number;
 };
 
-/** People Also Ask and related searches for the seed. One cached SERP call. */
-async function fromSerp(seed: string, country: string): Promise<RawSignal[]> {
-  if (!dataForSeoConfigured() && !serpApiConfigured()) return [];
+/**
+ * People Also Ask and related searches for the seed. One cached SERP call.
+ *
+ * Reports which provider actually answered. The screen used to print
+ * "Provenance: SerpApi PAA" whatever happened, which stopped being true when
+ * DataForSEO became primary — a provenance line that names the wrong source
+ * is worse than none, because it is believed.
+ */
+async function fromSerp(
+  seed: string,
+  country: string,
+): Promise<{ signals: RawSignal[]; provider: string | null; cached: boolean }> {
+  if (!dataForSeoConfigured() && !serpApiConfigured()) {
+    return { signals: [], provider: null, cached: false };
+  }
 
   try {
     const serp = await getNormalizedSerp({
@@ -43,10 +55,14 @@ async function fromSerp(seed: string, country: string): Promise<RawSignal[]> {
     for (const phrase of serp.relatedSearches) {
       out.push({ phrase, source: "related" });
     }
-    return out;
+    return {
+      signals: out,
+      provider: serp.provider === "dataforseo" ? "DataForSEO" : "SerpApi",
+      cached: serp.fromCache,
+    };
   } catch {
     // A missing SERP must not stop Search Console signal being used.
-    return [];
+    return { signals: [], provider: null, cached: false };
   }
 }
 
@@ -110,6 +126,10 @@ async function fromSearchConsole(
 export type SignalBundle = {
   signals: RawSignal[];
   counts: { paa: number; related: number; searchConsole: number };
+  /** Which provider answered, so the screen can say so truthfully. */
+  provider: string | null;
+  /** Whether the SERP came off the wire or out of the cache. */
+  cached: boolean;
   /** True when neither source returned anything usable. */
   empty: boolean;
 };
@@ -119,10 +139,11 @@ export async function gatherSignals(
   seed: string,
   country = "us",
 ): Promise<SignalBundle> {
-  const [serp, gsc] = await Promise.all([
+  const [serpResult, gsc] = await Promise.all([
     fromSerp(seed, country),
     fromSearchConsole(projectId, seed).catch(() => [] as RawSignal[]),
   ]);
+  const serp = serpResult.signals;
 
   // De-duplicate across sources, keeping the first (SERP) occurrence.
   const seen = new Set<string>();
@@ -141,6 +162,8 @@ export async function gatherSignals(
       related: serp.filter((s) => s.source === "related").length,
       searchConsole: gsc.length,
     },
+    provider: serpResult.provider,
+    cached: serpResult.cached,
     empty: signals.length === 0,
   };
 }

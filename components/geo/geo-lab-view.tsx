@@ -44,6 +44,9 @@ type Signals = {
   related: number;
   searchConsole: number;
   publishedChecked: number;
+  /** Which provider answered. Null when neither was configured. */
+  provider?: string | null;
+  cached?: boolean;
 };
 
 const STAGES: { id: GeoStageId; label: string; short: string }[] = [
@@ -717,14 +720,17 @@ export function GeoLabView({
               )}
               {!gscConnected && (
                 <span className="text-xs text-muted-foreground">
-                  Search Console not connected — PAA / related still used when SerpApi is configured.
+                  Search Console not connected — PAA and related searches still
+                  come from DataForSEO.
                 </span>
               )}
             </div>
 
             {signals !== null && (
               <p className="mt-3 text-xs text-muted-foreground">
-                Provenance: SerpApi PAA {signals.paa} · Related {signals.related}
+                Provenance: {signals.provider ?? "No SERP provider"}
+                {signals.cached === true ? " (cached)" : ""} · PAA {signals.paa} ·
+                Related {signals.related}
                 {signals.searchConsole > 0
                   ? ` · GSC ${signals.searchConsole}`
                   : gscConnected
