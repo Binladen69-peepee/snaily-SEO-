@@ -10,6 +10,7 @@ import {
   fetchAccountEmail,
   originOf,
 } from "@/lib/google/oauth";
+import { ensureSettings } from "@/lib/settings";
 
 /**
  * Completes "Continue with Google".
@@ -24,6 +25,8 @@ import {
  * accounts would let anyone with a Google login in.
  */
 export async function GET(req: Request) {
+  // The token exchange must use the same credentials the start route used.
+  await ensureSettings();
   const origin = originOf(req);
 
   /** Always clears the nonce on the way out, so a code cannot be replayed. */

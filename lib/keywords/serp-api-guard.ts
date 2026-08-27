@@ -6,6 +6,7 @@
  */
 
 import { serpSearchesLeft } from "@/lib/keywords/quota";
+import { ensureSettings } from "@/lib/settings";
 
 let exhaustedUntil = 0;
 
@@ -30,6 +31,9 @@ export function serpApiConfigured(): boolean {
  * and account still has searches when we can tell).
  */
 export async function serpApiFallbackAvailable(): Promise<boolean> {
+  // The key may live in the encrypted settings store rather than the
+  // environment; hydrate before deciding the provider is unconfigured.
+  await ensureSettings();
   if (!serpApiConfigured()) return false;
   if (serpApiQuotaBlocked()) return false;
 

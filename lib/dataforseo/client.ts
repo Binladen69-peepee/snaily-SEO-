@@ -10,6 +10,7 @@ import {
   requireCredentials,
   type DataForSeoCredentials,
 } from "@/lib/dataforseo/config";
+import { ensureSettings } from "@/lib/settings";
 import { DataForSeoError, errorFromStatus } from "@/lib/dataforseo/errors";
 
 export type DataForSeoTaskResult<T> = {
@@ -44,6 +45,14 @@ export async function dataForSeoPost<T>(
     fetchImpl?: typeof fetch;
   } = {},
 ): Promise<DataForSeoTaskResult<T>> {
+  /*
+   * Credentials come out of process.env, which is only correct once the
+   * encrypted settings store has been hydrated into it. Doing that here means
+   * a key saved in the UI is used by the very next request, on any instance,
+   * rather than waiting for a redeploy. Cached for a short TTL, so this is not
+   * a database round trip per call.
+   */
+  if (opts.credentials === undefined) await ensureSettings();
   const creds = opts.credentials ?? requireCredentials();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -156,6 +165,7 @@ export async function dataForSeoGet<T>(
     fetchImpl?: typeof fetch;
   } = {},
 ): Promise<T> {
+  if (opts.credentials === undefined) await ensureSettings();
   const creds = opts.credentials ?? requireCredentials();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = opts.fetchImpl ?? fetch;

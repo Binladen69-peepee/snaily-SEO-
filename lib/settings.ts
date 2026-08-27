@@ -118,20 +118,84 @@ export const SETTINGS: SettingSpec[] = [
  */
 
 let loaded = false;
+let loadedAt = 0;
+let inflight: Promise<void> | null = null;
+
+/**
+ * How long a hydration is trusted before the store is read again.
+ *
+ * Serverless makes this matter: a key saved by one instance is invisible to
+ * every other instance until that instance re-reads. Thirty seconds bounds how
+ * long a rotated key can keep failing, without making a database round trip
+ * part of every provider call.
+ */
+const SETTINGS_TTL_MS = 30_000;
+
+/**
+ * The environment as the process was started with.
+ *
+ * Captured before anything overwrites it so that clearing a stored setting can
+ * put the original value back. Without this, deleting a key left the last
+ * stored value sitting in `process.env` and "revert to environment" quietly
+ * did nothing until the process died.
+ */
+const bootEnv = new Map<string, string | undefined>();
+let bootCaptured = false;
+
+function captureBootEnv(): void {
+  if (bootCaptured) return;
+  for (const spec of SETTINGS) bootEnv.set(spec.key, process.env[spec.key]);
+  bootCaptured = true;
+}
 
 export async function loadSettings(): Promise<void> {
+  captureBootEnv();
   try {
     const rows = await prisma.appSetting.findMany();
-    for (const row of rows) {
-      const value = decryptToken(row.value);
-      // A blank stored value means "fall back to the environment".
-      if (value.trim() !== "") process.env[row.key] = value;
+    const stored = new Map(rows.map((r) => [r.key, decryptToken(r.value)]));
+
+    for (const spec of SETTINGS) {
+      const value = stored.get(spec.key);
+      if (value !== undefined && value.trim() !== "") {
+        process.env[spec.key] = value;
+        continue;
+      }
+      // No stored value, or a blank one: the environment is the answer again.
+      const original = bootEnv.get(spec.key);
+      if (original === undefined) delete process.env[spec.key];
+      else process.env[spec.key] = original;
     }
+
     loaded = true;
+    loadedAt = Date.now();
   } catch {
     // A settings table that is unreachable must not stop the app booting —
     // the environment values are still there.
   }
+}
+
+/**
+ * Hydrate the store into the environment if it has not been done recently.
+ *
+ * Every provider reads its credentials synchronously out of `process.env`,
+ * which is only correct if the store has been read into it first. That was
+ * happening in exactly one module, so a key saved through the UI was stored,
+ * encrypted, listed back correctly — and then ignored by DataForSEO, Google
+ * and SerpApi, which is what made rotating a key require a redeploy.
+ *
+ * Idempotent and de-duplicated: concurrent callers share one read.
+ */
+export async function ensureSettings(): Promise<void> {
+  if (loaded && Date.now() - loadedAt < SETTINGS_TTL_MS) return;
+  inflight ??= loadSettings().finally(() => {
+    inflight = null;
+  });
+  await inflight;
+}
+
+/** Force the next `ensureSettings()` to re-read. Called after a save. */
+export function invalidateSettings(): void {
+  loadedAt = 0;
 }
 
 export function settingsLoaded(): boolean {
@@ -185,14 +249,16 @@ export async function saveSetting(
     update: { value: encrypted, updatedBy },
   });
 
-  // Take effect immediately in this process; other instances pick it up on
-  // their next boot.
+  // Immediate in this process; other instances pick it up within the TTL.
   if (value.trim() !== "") process.env[key] = value;
+  invalidateSettings();
 }
 
 export async function clearSetting(key: SettingKey): Promise<void> {
   await prisma.appSetting.deleteMany({ where: { key } });
-  // Reverting to the environment needs a fresh process; the UI says so.
+  // The next hydration restores whatever the environment had at boot.
+  invalidateSettings();
+  await loadSettings();
 }
 
 /**

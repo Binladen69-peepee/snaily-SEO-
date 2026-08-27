@@ -9,6 +9,7 @@ import {
   googleIsConfigured,
   originOf,
 } from "@/lib/google/oauth";
+import { ensureSettings } from "@/lib/settings";
 
 /**
  * Starts incremental Google Drive consent for Drafter exports.
@@ -17,6 +18,7 @@ import {
  * existing Google account and returns them to the article they came from.
  */
 export async function GET(req: Request) {
+  await ensureSettings();
   const origin = originOf(req);
   const session = await getSession();
 

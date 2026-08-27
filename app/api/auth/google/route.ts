@@ -7,6 +7,7 @@ import {
   googleIsConfigured,
   originOf,
 } from "@/lib/google/oauth";
+import { ensureSettings } from "@/lib/settings";
 
 /**
  * Starts "Continue with Google".
@@ -15,7 +16,9 @@ import {
  * person is allowed in is decided in the callback, once Google has told us
  * which email they actually control.
  */
-export function GET(req: Request) {
+export async function GET(req: Request) {
+  // A client id saved in the settings store must be the one we send Google.
+  await ensureSettings();
   const origin = originOf(req);
 
   if (!googleIsConfigured()) {
