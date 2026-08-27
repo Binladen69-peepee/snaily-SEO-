@@ -587,7 +587,12 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
           </div>
 
           {/* Tablet / desktop: table */}
-          <div className="scroll-x hidden rounded-xl border border-border md:block">
+          {/*
+            overflow-x-auto, not the .scroll-x helper: that lives in @layer base,
+            which loses to any utility, so the table pushed the page sideways at
+            390px instead of scrolling inside its own box.
+          */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
             <table className="w-full min-w-[36rem] text-sm">
               <caption className="sr-only">
                 Audited pages ranked by priority, with health and opportunity scores

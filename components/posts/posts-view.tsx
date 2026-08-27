@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowUpDown,
   ExternalLink,
   FileText,
   Loader2,
@@ -22,6 +21,7 @@ import type { ConnectionStatus } from "@/lib/wordpress/sync";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/pagination";
 import { useDebounced } from "@/lib/use-debounced";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type SortId = "priority" | "modified" | "clicks" | "words-asc" | "seo-asc" | "title";
 
@@ -363,41 +363,48 @@ export function PostsView({
           Needs attention
         </button>
 
-        <select
-          value={type}
-          onChange={(e) => { setType(e.target.value as typeof type); }}
+        {/*
+          The app's own select, not the browser's. A native dropdown renders
+          differently on every platform and ignores the theme, which is why
+          these three looked like controls borrowed from another product.
+        */}
+        <SearchableSelect
+          className="w-[8.5rem]"
           aria-label="Filter by type"
-          className="h-9 rounded-md border border-input bg-background px-2.5 text-sm"
-        >
-          <option value="all">All types</option>
-          <option value="post">Posts</option>
-          <option value="page">Pages</option>
-        </select>
+          value={type}
+          options={[
+            { value: "all", label: "All types" },
+            { value: "post", label: "Posts" },
+            { value: "page", label: "Pages" },
+          ]}
+          onChange={(next) => {
+            setType(next as typeof type);
+          }}
+        />
 
-        <select
-          value={state}
-          onChange={(e) => { setState(e.target.value as typeof state); }}
+        <SearchableSelect
+          className="w-[9.5rem]"
           aria-label="Filter by status"
-          className="h-9 rounded-md border border-input bg-background px-2.5 text-sm"
-        >
-          <option value="all">All statuses</option>
-          <option value="publish">Published</option>
-          <option value="draft">Drafts</option>
-        </select>
+          value={state}
+          options={[
+            { value: "all", label: "All statuses" },
+            { value: "publish", label: "Published" },
+            { value: "draft", label: "Drafts" },
+          ]}
+          onChange={(next) => {
+            setState(next as typeof state);
+          }}
+        />
 
-        <div className="relative">
-          <ArrowUpDown className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <select
-            value={sort}
-            onChange={(e) => { setSort(e.target.value as SortId); }}
-            aria-label="Sort posts"
-            className="h-9 rounded-md border border-input bg-background pl-8 pr-2.5 text-sm"
-          >
-            {SORTS.map((s) => (
-              <option key={s.id} value={s.id}>{s.label}</option>
-            ))}
-          </select>
-        </div>
+        <SearchableSelect
+          className="w-[13rem]"
+          aria-label="Sort posts"
+          value={sort}
+          options={SORTS.map((s) => ({ value: s.id, label: s.label }))}
+          onChange={(next) => {
+            setSort(next as SortId);
+          }}
+        />
 
         <span className="ml-auto text-xs text-muted-foreground">
           {visible.length} of {posts.length}

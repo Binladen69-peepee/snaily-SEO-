@@ -181,6 +181,7 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
     const editable: RowModel[] = settings.flatMap((s) => {
       const probe = probeFor(s.key);
       if (!probe) return [];
+      if (ownedByProvider.has(s.key)) return [];
       return [
         {
           id: s.key,
@@ -193,9 +194,16 @@ export function IntegrationsView({ initial }: { initial: SettingView[] }) {
       ];
     });
 
+    /*
+     * Keys a provider card already owns are not listed again here. Showing
+     * "DataForSEO login" as its own card underneath the DataForSEO card is the
+     * split this consolidation existed to remove, and two editors for one
+     * value is two places for it to disagree.
+     */
+    const ownedByProvider = new Set(PROVIDERS.flatMap((p) => p.keys as string[]));
     const editableIds = new Set(["SERPAPI_KEY", "GROK_API_KEY", "GOOGLE_CLIENT_ID"]);
     const deployment: RowModel[] = checks
-      .filter((c) => !editableIds.has(c.id))
+      .filter((c) => !editableIds.has(c.id) && !ownedByProvider.has(c.id))
       .map((c) => ({
         id: c.id,
         name: c.label,

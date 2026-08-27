@@ -892,7 +892,12 @@ export function GeoLabView({
           </div>
 
           {/* Desktop table */}
-          <div className="scroll-x hidden rounded-xl border border-border md:block">
+          {/*
+            overflow-x-auto, not the .scroll-x helper: that lives in @layer base,
+            which loses to any utility, so the table pushed the page sideways at
+            390px instead of scrolling inside its own box.
+          */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border md:block">
             <table className="w-full min-w-[48rem] text-sm">
               <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
