@@ -55,6 +55,8 @@ import {
   type Provenance,
   type SectionKey,
 } from "@/lib/jobs/types";
+import { deriveCardFields } from "@/lib/drafter/card-fields";
+import { parseEditorial } from "@/lib/drafter/editorial";
 
 /** A post this long is what the site publishes; a 900-word one is unfinished. */
 const DEFAULT_TARGET_WORDS = 1_800;
@@ -548,7 +550,37 @@ export async function sections(ctx: StageContext): Promise<StageResult> {
       };
     }
 
-    const written = await writeGroup(ctx, group, parsed.steps);
+    let written = await writeGroup(ctx, group, parsed.steps);
+
+    /*
+     * A group asks for more than one section in a single reply, and a reply
+     * that answered only half of it used to be filed as-is: the missing half
+     * simply never appeared, with nothing anywhere saying so. That is how a
+     * Moroccan sweet potato soup shipped with no specialty-ingredients section
+     * at all, between "why you'll adore" and "variations".
+     *
+     * Anything asked for and not returned is asked for again on its own, where
+     * there is no second section for the model to lose it behind. Once only:
+     * if a section will not come back twice, the outline's default heading is
+     * better than an unbounded retry loop.
+     */
+    const missing = group.keys.filter((k) => (written[k] ?? "") === "");
+    if (missing.length > 0 && group.keys.length > 1) {
+      ctx.log("section_missing", { group: group.id, keys: missing.join(",") });
+
+      for (const key of missing) {
+        const retry = await writeGroup(
+          ctx,
+          { ...group, id: `${group.id}-${key}`, keys: [key] },
+          parsed.steps,
+        );
+        if ((retry[key] ?? "") !== "") {
+          written = { ...written, [key]: retry[key] };
+          ctx.log("section_recovered", { group: group.id, key });
+        }
+      }
+    }
+
     for (const [key, body] of Object.entries(written) as [SectionKey, string][]) {
       const existing = state.sections[key] ?? "";
       // Split methods append; everything else is written exactly once.
@@ -752,7 +784,7 @@ export async function recipe(ctx: StageContext): Promise<StageResult> {
 
   const row = await prisma.article.findUnique({
     where: { id: ctx.article.id },
-    select: { recipeCard: true, title: true },
+    select: { recipeCard: true, title: true, editorial: true, keyword: true },
   });
   const card = parseRecipe(row?.recipeCard);
 
@@ -790,7 +822,7 @@ export async function recipe(ctx: StageContext): Promise<StageResult> {
       .slice(0, 320);
   }
 
-  const filled: RecipeCard = {
+  const base: RecipeCard = {
     ...card,
     name: card.name || (row?.title ?? ctx.article.title),
     description,
@@ -800,6 +832,22 @@ export async function recipe(ctx: StageContext): Promise<StageResult> {
         ? card.steps
         : parsed.steps.map((text) => ({ text, name: "" })),
   };
+
+  /*
+   * Course, cuisine, keyword and summary come from what the article already
+   * decided — its categories, its focus keyword, the card's own opening
+   * sentence. WP Recipe Maker calls all four recommended and every card this
+   * product exported had them empty.
+   *
+   * Times, yield and cost are deliberately not derived. Those exist only in
+   * the author's paste or their head, and a cook time nobody stated is a false
+   * claim published as structured data.
+   */
+  const meta = parseEditorial(row?.editorial);
+  const filled = deriveCardFields(base, {
+    categories: meta.categories,
+    focusKeyword: (row?.keyword ?? ctx.article.keyword ?? "").trim(),
+  });
 
   await prisma.article.update({
     where: { id: ctx.article.id },

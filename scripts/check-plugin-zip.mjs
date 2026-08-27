@@ -151,6 +151,9 @@ async function main() {
     ["post_type !== 'attachment'", "  and refuses anything that is not an attachment"],
     ["wp_attachment_is_image", "  and anything that is not an image"],
     ["'persisted' =>", "  and reads the value back so a caller can confirm it"],
+    ["snaily_seo_author_id", "1.4.2: drafts are attributed to the site's own author"],
+    ["'post_author'", "  and post_author is actually set on the post"],
+    ["SNAILY_SEO_AUTHOR_OPTION", "  with the author configurable in plugin settings"],
   ]) {
     check(php.includes(needle), what);
   }

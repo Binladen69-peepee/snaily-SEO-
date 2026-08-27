@@ -165,6 +165,22 @@
   --font-nav: var(--font-rubik), Rubik, "Segoe UI", system-ui, sans-serif;
 }
 
+/*
+ * Contained horizontal scroll — tabs, tables — without widening the page.
+ *
+ * Declared as a utility, not in @layer base. In base it was losing the
+ * cascade and computing to `overflow-x: visible`, so every tab strip and
+ * table using it pushed the page sideways instead of scrolling inside its own
+ * box. That was measurable: a 36rem table inside a 374px column made the
+ * document 443px wide at a 390px viewport.
+ */
+@utility scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -188,13 +204,6 @@
     text-decoration: none;
   }
 
-  /* Contained horizontal scroll — tabs, tables — without widening the page */
-  .scroll-x {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-  }
 
   /* App content padding — safe-area aware, never overflows 100vw */
   /*
