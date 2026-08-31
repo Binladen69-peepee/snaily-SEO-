@@ -67,6 +67,7 @@ Drafts are attributed to the author configured in Settings → Snaily SEO
 
 ```bash
 npm run test:content-audit      # alt / link classification, clean-page maths
+npm run test:intelligence-cards # spotlight cards, stale issues, score inputs
 npm run test:fix-actions        # the media-alt fix and its refusals
 npm run test:runtime-settings   # provider resolution order, masking
 npm run test:integrations       # provider grouping, verify-before-save
@@ -88,6 +89,13 @@ TARGET=https://cinnamon-snail-seo-tool.vercel.app node scripts/verify-responsive
 
 Verifies 390/768/1024/1440 for overflow, plus keyboard focus.
 
+```bash
+TARGET=https://cinnamon-snail-seo-tool.vercel.app node scripts/verify-intel-cards.mjs
+```
+
+Clicks a card in each spotlight group and checks the detail actually arrives on
+screen, names the page the card named, and raises no console error.
+
 **Run these against production, not `next start`.** `next start` answers 400
 for chunk URLs containing the `(app)` route-group parentheses; the resulting
 "Loading chunk failed" banner is one long URL that reads as a layout overflow.
@@ -107,7 +115,22 @@ Vercel serves those chunks correctly.
   stay empty because only the author knows them.
 - **`alt=""` is correct markup**, not a missing alt. `lib/audit/images.ts`
   classifies images as content / decorative / chrome; only a content image with
-  no alt attribute is a defect.
+  no alt attribute is a defect, and only when the crawl can name the image —
+  a count with no source is not reportable, fixable or verifiable.
+- **A crawl is a snapshot of what the code believed that day.** Issues are
+  computed once, at crawl time, and stored as JSON, so correcting a check does
+  not correct reports already in the database. `reconcile()` in
+  `lib/intelligence/report.ts` re-tests stored issues against the evidence on
+  the row on the way out. Only evidence the row stores can be reconciled; for
+  anything else, re-run the audit.
+- **Scores count defects, not everything reported.** `decorative_image`,
+  `blocked_internal_link` and `page_unreachable` are informational — they are
+  shown, never scored. Scoring them once put "11 decorative images correctly
+  marked" on Fix these first.
+- **Never format a date or number by runtime locale on these screens.** They
+  render on Vercel in UTC and hydrate in the reader's zone; a bare
+  `toLocaleString()` is a hydration error on every non-UTC load. Use
+  `lib/intelligence/dates.ts` and `formatNumber`.
 - **A blocked page is not a broken page.** Cloudflare answers the crawler with
   429 on cinnamonsnail.com. `lib/audit/link-status.ts` separates
   valid/redirect/blocked/timeout/broken, and only 404/410/5xx counts.
