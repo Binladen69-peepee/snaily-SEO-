@@ -232,6 +232,29 @@ try {
     `priority ${String(priorityScore(blocked, []).score)}`,
   );
 
+  /*
+   * A stored issue does not get to outlive the rule that made it.
+   *
+   * Issues are computed once, at crawl time, and kept as JSON — so fixing a
+   * check does not fix the reports already in the database. buildReport
+   * reconciles what it reads against the evidence on the row, which is what
+   * makes the correction reach a crawl that has already run.
+   */
+  const report = fs.readFileSync("lib/intelligence/report.ts", "utf8");
+  check(
+    /function reconcile\(issues: Issue\[\], row: PageRow\): Issue\[\]/.test(report),
+    "stored issues are reconciled on the way out of the database",
+  );
+  check(
+    /issues: reconcile\(parseIssues\(doc\.issues\), doc\)/.test(report),
+    "and every snapshot goes through it — current crawl and comparison alike",
+  );
+  check(
+    /row\.imagesMissingAltSrc\.length > 0/.test(report) &&
+      /i\.code !== "missing_alt"/.test(report),
+    "a stored missing-alt issue with no image to name is dropped",
+  );
+
   // The card summary is drawn from the same reasons the detail lists.
   const reasons = priorityScore(real, []).reasons.map((r) => r.label);
   check(

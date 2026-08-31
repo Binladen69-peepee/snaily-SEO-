@@ -40,6 +40,32 @@ function parseIssues(value: unknown): Issue[] {
   return value as Issue[];
 }
 
+/**
+ * Stored issues, reconciled against what the current rules would find.
+ *
+ * A page's issue list is computed once, at crawl time, and kept as JSON. That
+ * makes a crawl a snapshot of what the code believed on the day it ran — so
+ * correcting a rule does not correct the reports already sitting in the
+ * database, and the owner keeps being shown a defect the current code would
+ * never raise. It is why the missing-alt fix appeared not to work: his latest
+ * crawl flagged 80 of the 80 pages it could read, every one of them written
+ * before the image classifier existed.
+ *
+ * Only evidence stored on the row can be reconciled here — most of what a
+ * check reads (heading counts, canonical, word counts) is not kept — so this
+ * is deliberately narrow rather than a re-run of every check. A missing-alt
+ * issue names images: the row records which ones, the fix action needs them,
+ * and an issue that cannot name a single image is not one the reader can see,
+ * act on or confirm.
+ *
+ * A re-crawl produces the same answer. This makes the dashboard honest in the
+ * meantime, and keeps an older crawl honest when it is read for comparison.
+ */
+function reconcile(issues: Issue[], row: PageRow): Issue[] {
+  if (row.imagesMissingAltSrc.length > 0) return issues;
+  return issues.filter((i) => i.code !== "missing_alt");
+}
+
 function toSnapshot(doc: PageRow): PageSnapshot {
   return {
     url: doc.url,
@@ -51,7 +77,7 @@ function toSnapshot(doc: PageRow): PageSnapshot {
     brokenLinks: doc.brokenLinks,
     imagesMissingAltSrc: doc.imagesMissingAltSrc,
     lastModified: doc.lastModified?.toISOString() ?? null,
-    issues: parseIssues(doc.issues),
+    issues: reconcile(parseIssues(doc.issues), doc),
   };
 }
 

@@ -9,7 +9,7 @@ const url = new URL(process.env.DATABASE_URL);
 url.searchParams.set("connection_limit", "25");
 url.searchParams.set("pool_timeout", "60");
 const prisma = new PrismaClient({ datasources: { db: { url: url.toString() } } });
-const project = await prisma.project.findUnique({ where: { id: "cmsr7trc30003l9049oa06x0u" } });
+const project = await prisma.project.findUnique({ where: { id: "cmsj6ec0g0001jw045lu5uqjo" } });
 if (!project) { console.log("no project"); process.exit(1); }
 
 const audit = await prisma.audit.create({
