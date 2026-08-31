@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { GoogleLogo } from "@/components/brand-logos";
+import { GoogleOAuthDiagnostics } from "@/components/google-oauth-diagnostics";
 import { CardHeading } from "@/components/setup/card-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -150,6 +151,7 @@ export function GoogleProperties({
         <Button asChild size="sm">
           <a href="/api/auth/google?next=/projects">Continue with Google</a>
         </Button>
+        <GoogleOAuthDiagnostics />
 
         {/*
           The callback URL, shown because Google will not show it.

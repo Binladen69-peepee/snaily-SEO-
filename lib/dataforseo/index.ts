@@ -3,7 +3,8 @@
  *
  * SERP: getNormalizedSerp() — Drafter prefers DataForSEO (preferProvider),
  * Keyword Research prefers SerpApi while quota remains, then DataForSEO.
- * Authority: DataForSEO Rank via bulk_ranks / summary.
+ * Rank / backlinks / referring domains / spam score: DataForSEO Backlinks API.
+ * Not Moz DA/PA.
  */
 
 export {
@@ -19,11 +20,13 @@ export {
   DATAFORSEO_RANK_LABEL,
   DATAFORSEO_RANK_METRIC,
   fetchBacklinkSummary,
+  fetchBulkPagesSummary,
   fetchBulkRanks,
   normalizeTarget,
 } from "@/lib/dataforseo/backlinks";
 export {
   getCachedBacklinkSummary,
+  getCachedBulkPagesSummary,
   getCachedDataForSeoRanks,
   recentDataForSeoUsage,
 } from "@/lib/dataforseo/cache";
@@ -31,6 +34,7 @@ export {
 import { checkDataForSeoHealth } from "@/lib/dataforseo/health";
 import {
   getCachedBacklinkSummary,
+  getCachedBulkPagesSummary,
   getCachedDataForSeoRanks,
 } from "@/lib/dataforseo/cache";
 import { dataForSeoConfigured } from "@/lib/dataforseo/config";
@@ -55,5 +59,9 @@ export const DataForSeoProvider = {
 
   async backlinks(domain: string) {
     return getCachedBacklinkSummary(domain);
+  },
+
+  async pageSummaries(targets: string[]) {
+    return getCachedBulkPagesSummary(targets);
   },
 };

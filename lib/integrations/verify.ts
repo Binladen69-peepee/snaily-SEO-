@@ -13,6 +13,7 @@
 import { dataForSeoGet } from "@/lib/dataforseo/client";
 import { DataForSeoError } from "@/lib/dataforseo/errors";
 import type { ProviderId } from "@/lib/integrations/providers";
+import { verifyMozCredentials } from "@/lib/moz/client";
 import type { SettingKey } from "@/lib/settings";
 
 export type VerifyResult = {
@@ -170,6 +171,14 @@ export async function verifyProvider(
       return verifyGoogle(values);
     case "serpapi":
       return verifySerpApi(values);
+    case "moz": {
+      const accessId = (values.MOZ_ACCESS_ID ?? "").trim();
+      const secretKey = (values.MOZ_SECRET_KEY ?? "").trim();
+      if (accessId === "" || secretKey === "") {
+        return { ok: false, message: "Both the Access ID and Secret Key are needed." };
+      }
+      return verifyMozCredentials({ accessId, secretKey });
+    }
     default:
       return {
         ok: true,

@@ -215,6 +215,8 @@ model DomainMetric {
   dataforseoReferringPages  Int?
   /// When DataForSEO rank/summary was last written. Auth failures are not cached long.
   dataforseoFetchedAt       DateTime?
+  /// DataForSEO backlinks spam score 0–100 when fetched.
+  dataforseoSpamScore       Int?
 
   /// Which signals were actually present, so the UI can show confidence.
   signalsUsed String[] @default([])
@@ -223,6 +225,24 @@ model DomainMetric {
   updatedAt DateTime @updatedAt
 
   @@index([fetchedAt])
+  @@index([dataforseoFetchedAt])
+}
+
+/// Page-level DataForSEO metrics for Keyword Research SERP rows.
+model PageMetric {
+  id  String @id @default(cuid())
+  url String @unique
+
+  dataforseoRank             Int?
+  dataforseoBacklinks        Int?
+  dataforseoReferringDomains Int?
+  dataforseoSpamScore        Int?
+  dataforseoMainDomainRank   Int?
+  dataforseoFetchedAt        DateTime?
+
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([dataforseoFetchedAt])
 }
 

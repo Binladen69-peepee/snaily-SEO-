@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
 import { runHealthChecks } from "@/lib/settings-health";
+import { ensureSettings } from "@/lib/settings";
 import { isOwner } from "@/lib/users";
 
 /** Four external probes in parallel, each with its own 10s ceiling. */
@@ -15,5 +16,6 @@ export async function GET(req: Request) {
   }
 
   const force = new URL(req.url).searchParams.get("refresh") === "1";
+  await ensureSettings();
   return NextResponse.json({ checks: await runHealthChecks(force) });
 }

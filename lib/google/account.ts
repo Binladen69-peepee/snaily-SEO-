@@ -3,6 +3,7 @@ import type { OAuth2Client } from "google-auth-library";
 import { prisma } from "@/lib/db";
 import { decryptToken, encryptToken } from "@/lib/google/token-crypto";
 import { createOAuth2Client } from "@/lib/google/oauth";
+import { ensureSettings } from "@/lib/settings";
 
 /**
  * The signed-in user's Google identity.
@@ -115,6 +116,7 @@ export async function getGoogleClient(
   userId: string,
   origin: string,
 ): Promise<OAuth2Client | null> {
+  await ensureSettings();
   const account = await prisma.googleAccount.findUnique({ where: { userId } });
   if (!account) return null;
 

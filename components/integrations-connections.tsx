@@ -11,6 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { GoogleProperties, type ProjectGoogleLinks } from "@/components/google-properties";
+import { GoogleOAuthDiagnostics } from "@/components/google-oauth-diagnostics";
 import { Button } from "@/components/ui/button";
 import { DEPENDENTS } from "@/lib/integrations-impact";
 import { cn } from "@/lib/utils";
@@ -242,6 +243,7 @@ export function IntegrationsConnections({
             </Button>
           )}
         </div>
+        <GoogleOAuthDiagnostics />
       </div>
 
       {/* ---------------- per-project links ---------------- */}

@@ -14,6 +14,7 @@
 import type { SettingKey } from "@/lib/settings";
 
 export type ProviderId =
+  | "moz"
   | "dataforseo"
   | "google"
   | "serpapi"
@@ -38,6 +39,15 @@ export type ProviderSpec = {
 };
 
 export const PROVIDERS: ProviderSpec[] = [
+  {
+    id: "moz",
+    name: "Moz",
+    purpose:
+      "Real Domain Authority and Page Authority. Without it those columns show DataForSEO Rank instead, which is a different metric.",
+    keys: ["MOZ_ACCESS_ID", "MOZ_SECRET_KEY"],
+    verifiable: true,
+    console: "moz.com/api/dashboard",
+  },
   {
     id: "dataforseo",
     name: "DataForSEO",

@@ -12,6 +12,7 @@
 
 import { dataForSeoPost } from "@/lib/dataforseo/client";
 import { DataForSeoError } from "@/lib/dataforseo/errors";
+import type { DataForSeoCredentials } from "@/lib/dataforseo/config";
 
 export const DATAFORSEO_PROVIDER = "dataforseo" as const;
 export const DATAFORSEO_RANK_METRIC = "rank_0_100" as const;
@@ -29,6 +30,17 @@ export type DataForSeoBacklinkSummary = {
   referringDomains: number | null;
   referringMainDomains: number | null;
   referringPages: number | null;
+  spamScore: number | null;
+};
+
+export type DataForSeoPageSummary = {
+  target: string;
+  url: string;
+  rank: number | null;
+  mainDomainRank: number | null;
+  backlinks: number | null;
+  referringDomains: number | null;
+  referringMainDomains: number | null;
   spamScore: number | null;
 };
 
@@ -57,13 +69,29 @@ type SummaryItem = {
   backlinks_spam_score?: number | null;
 };
 
+type PageSummaryItem = {
+  url?: string;
+  rank?: number | null;
+  main_domain_rank?: number | null;
+  backlinks?: number | null;
+  referring_domains?: number | null;
+  referring_main_domains?: number | null;
+  backlinks_spam_score?: number | null;
+  spam_score?: number | null;
+};
+
+type PageSummaryBlock = {
+  items_count?: number;
+  items?: PageSummaryItem[];
+};
+
 /**
  * Bulk domain/page ranks on the 0–100 scale.
  * Cost-efficient for Keyword Research competitor columns.
  */
 export async function fetchBulkRanks(
   targets: string[],
-  opts: { fetchImpl?: typeof fetch } = {},
+  opts: { fetchImpl?: typeof fetch; credentials?: DataForSeoCredentials } = {},
 ): Promise<{ rows: DataForSeoRankRow[]; cost: number }> {
   const cleaned = uniqueTargets(targets);
   if (cleaned.length === 0) {
@@ -85,7 +113,7 @@ export async function fetchBulkRanks(
         rank_scale: "one_hundred",
       },
     ],
-    { fetchImpl: opts.fetchImpl },
+    { fetchImpl: opts.fetchImpl, credentials: opts.credentials },
   );
 
   const byTarget = new Map<string, number | null>();
@@ -116,7 +144,7 @@ export async function fetchBulkRanks(
  */
 export async function fetchBacklinkSummary(
   target: string,
-  opts: { fetchImpl?: typeof fetch } = {},
+  opts: { fetchImpl?: typeof fetch; credentials?: DataForSeoCredentials } = {},
 ): Promise<{ summary: DataForSeoBacklinkSummary; cost: number }> {
   const cleaned = normalizeTarget(target);
   if (cleaned === "") {
@@ -133,7 +161,7 @@ export async function fetchBacklinkSummary(
         rank_scale: "one_hundred",
       },
     ],
-    { fetchImpl: opts.fetchImpl },
+    { fetchImpl: opts.fetchImpl, credentials: opts.credentials },
   );
 
   const item = response.result[0];
@@ -153,6 +181,102 @@ export async function fetchBacklinkSummary(
       spamScore: clampRank(item.backlinks_spam_score ?? item.spam_score),
     },
   };
+}
+
+/**
+ * Page/domain backlink summaries in one call (up to 1000 targets, 100 domains).
+ * Used by Keyword Research for referring domains, backlinks and spam score.
+ */
+export async function fetchBulkPagesSummary(
+  targets: string[],
+  opts: { fetchImpl?: typeof fetch; credentials?: DataForSeoCredentials } = {},
+): Promise<{ rows: DataForSeoPageSummary[]; cost: number }> {
+  const cleaned = uniquePageTargets(targets);
+  if (cleaned.length === 0) {
+    return { rows: [], cost: 0 };
+  }
+
+  const response = await dataForSeoPost<PageSummaryBlock>(
+    "/v3/backlinks/bulk_pages_summary/live",
+    [
+      {
+        targets: cleaned,
+        include_subdomains: true,
+        rank_scale: "one_hundred",
+      },
+    ],
+    { fetchImpl: opts.fetchImpl, credentials: opts.credentials },
+  );
+
+  const byTarget = new Map<string, DataForSeoPageSummary>();
+  for (const block of response.result) {
+    const items: PageSummaryItem[] = Array.isArray(block.items)
+      ? block.items
+      : [];
+    for (const item of items) {
+      const url = String(item.url ?? "").trim();
+      if (url === "") continue;
+      const row: DataForSeoPageSummary = {
+        target: url,
+        url,
+        rank: clampRank(item.rank),
+        mainDomainRank: clampRank(item.main_domain_rank),
+        backlinks: nonNegInt(item.backlinks),
+        referringDomains: nonNegInt(item.referring_domains),
+        referringMainDomains: nonNegInt(item.referring_main_domains),
+        spamScore: clampRank(item.backlinks_spam_score ?? item.spam_score),
+      };
+      byTarget.set(normalizePageTarget(url), row);
+      byTarget.set(url, row);
+    }
+  }
+
+  const rows: DataForSeoPageSummary[] = cleaned.map((target) => {
+    const found =
+      byTarget.get(normalizePageTarget(target)) ?? byTarget.get(target);
+    return (
+      found ?? {
+        target,
+        url: target,
+        rank: null,
+        mainDomainRank: null,
+        backlinks: null,
+        referringDomains: null,
+        referringMainDomains: null,
+        spamScore: null,
+      }
+    );
+  });
+
+  return { rows, cost: response.cost };
+}
+
+export function normalizePageTarget(raw: string): string {
+  const value = raw.trim();
+  if (value === "") return "";
+  try {
+    if (value.includes("://")) {
+      const u = new URL(value);
+      const host = u.hostname.replace(/^www\./, "").toLowerCase();
+      const path = u.pathname.replace(/\/+$/, "");
+      return `${u.protocol}//${host}${path === "/" ? "" : path}`;
+    }
+  } catch {
+    // keep
+  }
+  return normalizeTarget(value);
+}
+
+function uniquePageTargets(targets: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of targets) {
+    const n = t.trim();
+    if (n === "" || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out.slice(0, 1000);
 }
 
 export function normalizeTarget(raw: string): string {

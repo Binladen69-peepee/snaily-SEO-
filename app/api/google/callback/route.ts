@@ -5,6 +5,11 @@ import { createSession, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { saveGoogleAccount } from "@/lib/google/account";
 import {
+  buildOAuthDiagnostic,
+  consentErrorMessage,
+  diagnosticQuery,
+} from "@/lib/google/diagnostics";
+import {
   decodeState,
   exchangeCode,
   fetchAccountEmail,
@@ -13,25 +18,23 @@ import {
 import { ensureSettings } from "@/lib/settings";
 
 /**
- * Completes "Continue with Google".
+ * Completes Google OAuth for sign-in AND for Connect Google (GSC/GA4).
  *
- * Lives at /api/google/callback because that path is already registered in the
- * Google Cloud OAuth client for both localhost and production. Moving it would
- * mean re-editing the console before anyone could sign in.
- *
- * Authorisation rule: a session is created only when the Google email already
- * belongs to a user in this database. Accounts are never created here — this
- * is a private, self-hosted tool, and an open Google button that provisioned
- * accounts would let anyone with a Google login in.
+ * Connect (intent=connect|drive) attaches tokens to the signed-in session.
+ * Login creates a session only when the Google email already belongs to a user.
  */
 export async function GET(req: Request) {
-  // The token exchange must use the same credentials the start route used.
   await ensureSettings();
   const origin = originOf(req);
+  const diag = buildOAuthDiagnostic(origin);
 
-  /** Always clears the nonce on the way out, so a code cannot be replayed. */
-  const done = (params: string) => {
-    const res = NextResponse.redirect(`${origin}/login?${params}`);
+  const fail = (
+    path: string,
+    extra: Parameters<typeof diagnosticQuery>[1],
+  ) => {
+    const res = NextResponse.redirect(
+      `${origin}${path}?${diagnosticQuery(diag, extra)}`,
+    );
     res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
     return res;
   };
@@ -41,27 +44,40 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const rawState = url.searchParams.get("state");
 
+  const state = rawState ? decodeState(rawState) : null;
+  const nextPath =
+    state?.next && /^\/(?!\/)/.test(state.next) ? state.next : "/login";
+  const errorPath =
+    state?.intent === "login" || !state?.intent ? "/login" : nextPath;
+
   if (error !== null) {
-    return done(
-      `error=${encodeURIComponent(
-        error === "access_denied"
-          ? "You cancelled Google sign-in."
-          : `Google returned: ${error}`,
-      )}`,
-    );
+    return fail(errorPath, {
+      step: "consent",
+      consent: "denied",
+      tokenExchange: "not_reached",
+      error: consentErrorMessage(error),
+    });
   }
 
   if (code === null || rawState === null) {
-    return done(`error=${encodeURIComponent("Google sign-in was incomplete.")}`);
+    return fail(errorPath, {
+      step: "callback",
+      consent: "incomplete",
+      tokenExchange: "not_reached",
+      error:
+        "Google sign-in was incomplete — no authorization code was returned.",
+    });
   }
 
-  const state = decodeState(rawState);
   const nonce = (await cookies()).get("google_oauth_nonce")?.value;
 
   if (state === null || nonce === undefined || state.nonce !== nonce) {
-    return done(
-      `error=${encodeURIComponent("Sign-in link expired. Please try again.")}`,
-    );
+    return fail(errorPath, {
+      step: "callback",
+      consent: "ok",
+      tokenExchange: "not_reached",
+      error: "Sign-in link expired. Please try again.",
+    });
   }
 
   let email: string | null;
@@ -71,17 +87,68 @@ export async function GET(req: Request) {
     tokens = await exchangeCode(code, origin);
     email = await fetchAccountEmail(tokens.access_token ?? "", origin);
   } catch (err) {
-    return done(
-      `error=${encodeURIComponent(
-        err instanceof Error ? err.message : "Google sign-in failed.",
-      )}`,
-    );
+    const message = err instanceof Error ? err.message : "Google sign-in failed.";
+    const friendly = /invalid_client|unauthorized_client/i.test(message)
+      ? "OAuth client rejected during token exchange. The runtime GOOGLE_CLIENT_ID / SECRET do not match the client that started this flow, or the secret was rotated."
+      : /redirect_uri/i.test(message)
+        ? `Token exchange failed because the redirect URI did not match. This request used ${diag.redirectUri}.`
+        : message;
+    return fail(errorPath, {
+      step: "token_exchange",
+      consent: "ok",
+      tokenExchange: "fail",
+      error: friendly,
+    });
   }
 
   if (email === null || email.trim() === "") {
-    return done(
-      `error=${encodeURIComponent("Google did not share an email address.")}`,
-    );
+    return fail(errorPath, {
+      step: "token_exchange",
+      consent: "ok",
+      tokenExchange: "ok",
+      error:
+        "Google did not share an email address. Grant the email scope and try again.",
+    });
+  }
+
+  const succeed = (land: string) => {
+    const ok = new URLSearchParams({
+      google: "connected",
+      google_diag: "1",
+      oauth_step: "account_saved",
+      oauth_configured: "yes",
+      oauth_consent: "ok",
+      oauth_token: "ok",
+      oauth_client: diag.clientIdSuffix ?? "",
+      oauth_redirect: diag.redirectUri,
+    });
+    const res = NextResponse.redirect(`${origin}${land}?${ok.toString()}`);
+    res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
+    return res;
+  };
+
+  if (state.intent === "drive" || state.intent === "connect") {
+    const session = await getSession();
+    if (!session) {
+      return fail("/login", {
+        step: "callback",
+        consent: "ok",
+        tokenExchange: "ok",
+        error: "Sign in first, then connect Google.",
+      });
+    }
+    try {
+      await saveGoogleAccount(session.userId, email.toLowerCase(), tokens);
+    } catch (err) {
+      return fail(state.next ?? "/integrations", {
+        step: "account_saved",
+        consent: "ok",
+        tokenExchange: "ok",
+        error:
+          err instanceof Error ? err.message : "Could not store Google access.",
+      });
+    }
+    return succeed(state.next ?? "/integrations");
   }
 
   const user = await prisma.user.findUnique({
@@ -89,51 +156,25 @@ export async function GET(req: Request) {
     select: { id: true, email: true, name: true },
   });
 
-  /*
-   * Incremental Drive grant: the author is already signed in and we only
-   * needed extra scopes. Attach the tokens to their session account and send
-   * them back to Drafter. The Google email does not have to match the login
-   * email — Drive is a permission, not a new sign-in.
-   */
-  if (state.intent === "drive") {
-    const session = await getSession();
-    if (!session) {
-      return done(
-        `error=${encodeURIComponent("Sign in first, then connect Google Drive.")}`,
-      );
-    }
-    try {
-      await saveGoogleAccount(session.userId, email.toLowerCase(), tokens);
-    } catch {
-      const res = NextResponse.redirect(
-        `${origin}${state.next ?? "/content-assistant"}?drive=error`,
-      );
-      res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
-      return res;
-    }
-    const res = NextResponse.redirect(
-      `${origin}${state.next ?? "/content-assistant"}?drive=connected`,
-    );
-    res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
-    return res;
-  }
-
   if (!user) {
-    return done(
-      `error=${encodeURIComponent(
-        `Not authorized — ${email} does not have access to this tool. Ask the owner to add you first.`,
-      )}`,
-    );
+    return fail("/login", {
+      step: "account_saved",
+      consent: "ok",
+      tokenExchange: "ok",
+      error: `Not authorized — ${email} does not have access to this tool. Ask the owner to add you first.`,
+    });
   }
 
   try {
     await saveGoogleAccount(user.id, email.toLowerCase(), tokens);
   } catch (err) {
-    return done(
-      `error=${encodeURIComponent(
+    return fail("/login", {
+      step: "account_saved",
+      consent: "ok",
+      tokenExchange: "ok",
+      error:
         err instanceof Error ? err.message : "Could not store Google access.",
-      )}`,
-    );
+    });
   }
 
   await createSession({
@@ -142,7 +183,5 @@ export async function GET(req: Request) {
     name: user.name,
   });
 
-  const res = NextResponse.redirect(`${origin}${state.next ?? "/keywords"}`);
-  res.cookies.set("google_oauth_nonce", "", { maxAge: 0, path: "/" });
-  return res;
+  return succeed(state.next ?? "/keywords");
 }

@@ -7,9 +7,12 @@
 
 import {
   fetchBacklinkSummary,
+  fetchBulkPagesSummary,
   fetchBulkRanks,
+  normalizePageTarget,
   normalizeTarget,
   type DataForSeoBacklinkSummary,
+  type DataForSeoPageSummary,
   type DataForSeoRankRow,
 } from "@/lib/dataforseo/backlinks";
 import { dataForSeoConfigured } from "@/lib/dataforseo/config";
@@ -287,6 +290,7 @@ export async function getCachedBacklinkSummary(
         dataforseoBacklinks: summary.backlinks,
         dataforseoReferringPages: summary.referringPages,
         referringDomains: summary.referringDomains,
+        dataforseoSpamScore: summary.spamScore,
         dataforseoFetchedAt: now,
         linkDataRelease: "DataForSEO summary",
         linkDataFetchedAt: now,
@@ -297,6 +301,7 @@ export async function getCachedBacklinkSummary(
         dataforseoBacklinks: summary.backlinks,
         dataforseoReferringPages: summary.referringPages,
         referringDomains: summary.referringDomains,
+        dataforseoSpamScore: summary.spamScore,
         dataforseoFetchedAt: now,
         linkDataRelease: "DataForSEO summary",
         linkDataFetchedAt: now,
@@ -317,4 +322,187 @@ export async function getCachedBacklinkSummary(
     fromCache: false,
     cost,
   };
+}
+
+export type CachedPageSummary = DataForSeoPageSummary & {
+  fromCache: boolean;
+  cost: number;
+};
+
+/**
+ * Cached DataForSEO bulk_pages_summary for SERP URLs and their hosts.
+ * Does not invent counts — missing targets stay null.
+ */
+export async function getCachedBulkPagesSummary(
+  targets: string[],
+  opts: { fetchImpl?: typeof fetch; force?: boolean } = {},
+): Promise<Map<string, CachedPageSummary>> {
+  const out = new Map<string, CachedPageSummary>();
+  if (!dataForSeoConfigured()) return out;
+
+  const cleaned = [...new Set(targets.map((t) => t.trim()).filter((t) => t !== ""))];
+  if (cleaned.length === 0) return out;
+
+  const stale: string[] = [];
+
+  for (const target of cleaned) {
+    const isUrl = target.includes("://");
+    if (!opts.force) {
+      try {
+        if (isUrl) {
+          const row = await prisma.pageMetric.findUnique({
+            where: { url: target },
+            select: {
+              dataforseoRank: true,
+              dataforseoBacklinks: true,
+              dataforseoReferringDomains: true,
+              dataforseoSpamScore: true,
+              dataforseoMainDomainRank: true,
+              dataforseoFetchedAt: true,
+            },
+          });
+          if (row?.dataforseoFetchedAt && isFresh(row.dataforseoFetchedAt, DFS_SUCCESS_TTL_MS)) {
+            const summary: CachedPageSummary = {
+              target,
+              url: target,
+              rank: row.dataforseoRank,
+              mainDomainRank: row.dataforseoMainDomainRank,
+              backlinks: row.dataforseoBacklinks,
+              referringDomains: row.dataforseoReferringDomains,
+              referringMainDomains: null,
+              spamScore: row.dataforseoSpamScore,
+              fromCache: true,
+              cost: 0,
+            };
+            out.set(target, summary);
+            out.set(normalizePageTarget(target), summary);
+            continue;
+          }
+        } else {
+          const domain = normalizeTarget(target);
+          const row = await prisma.domainMetric.findUnique({
+            where: { domain },
+            select: {
+              dataforseoRank: true,
+              dataforseoBacklinks: true,
+              referringDomains: true,
+              dataforseoSpamScore: true,
+              dataforseoFetchedAt: true,
+              linkDataRelease: true,
+            },
+          });
+          const hasSummary =
+            row?.dataforseoBacklinks != null ||
+            (row?.linkDataRelease ?? "").includes("pages_summary") ||
+            (row?.linkDataRelease ?? "").includes("summary");
+          if (
+            row?.dataforseoFetchedAt &&
+            hasSummary &&
+            isFresh(row.dataforseoFetchedAt, DFS_SUCCESS_TTL_MS)
+          ) {
+            const summary: CachedPageSummary = {
+              target: domain,
+              url: domain,
+              rank: row.dataforseoRank,
+              mainDomainRank: row.dataforseoRank,
+              backlinks: row.dataforseoBacklinks,
+              referringDomains: row.referringDomains,
+              referringMainDomains: null,
+              spamScore: row.dataforseoSpamScore,
+              fromCache: true,
+              cost: 0,
+            };
+            out.set(target, summary);
+            out.set(domain, summary);
+            continue;
+          }
+        }
+      } catch {
+        // fall through to live fetch
+      }
+    }
+    stale.push(target);
+  }
+
+  if (stale.length === 0) return out;
+
+  let live: { rows: DataForSeoPageSummary[]; cost: number };
+  try {
+    live = await fetchBulkPagesSummary(stale, { fetchImpl: opts.fetchImpl });
+  } catch (err) {
+    if (err instanceof DataForSeoError && err.code === "unauthorized") throw err;
+    return out;
+  }
+
+  recordUsage({
+    endpoint: "backlinks/bulk_pages_summary/live",
+    requestCount: 1,
+    responseRows: live.rows.length,
+    estimatedCost: live.cost,
+    cacheHit: false,
+  });
+
+  const now = new Date();
+  for (const row of live.rows) {
+    const cached: CachedPageSummary = { ...row, fromCache: false, cost: live.cost };
+    out.set(row.target, cached);
+    out.set(normalizePageTarget(row.target), cached);
+
+    const isUrl = row.target.includes("://") || row.url.includes("://");
+    try {
+      if (isUrl) {
+        const url = row.url || row.target;
+        await prisma.pageMetric.upsert({
+          where: { url },
+          create: {
+            url,
+            dataforseoRank: row.rank,
+            dataforseoBacklinks: row.backlinks,
+            dataforseoReferringDomains: row.referringDomains,
+            dataforseoSpamScore: row.spamScore,
+            dataforseoMainDomainRank: row.mainDomainRank,
+            dataforseoFetchedAt: now,
+            fetchedAt: now,
+          },
+          update: {
+            dataforseoRank: row.rank,
+            dataforseoBacklinks: row.backlinks,
+            dataforseoReferringDomains: row.referringDomains,
+            dataforseoSpamScore: row.spamScore,
+            dataforseoMainDomainRank: row.mainDomainRank,
+            dataforseoFetchedAt: now,
+          },
+        });
+      } else {
+        const domain = normalizeTarget(row.target);
+        await prisma.domainMetric.upsert({
+          where: { domain },
+          create: {
+            domain,
+            dataforseoRank: row.rank ?? row.mainDomainRank,
+            dataforseoBacklinks: row.backlinks,
+            referringDomains: row.referringDomains,
+            dataforseoSpamScore: row.spamScore,
+            dataforseoFetchedAt: now,
+            linkDataRelease: "DataForSEO pages_summary",
+            linkDataFetchedAt: now,
+            fetchedAt: now,
+          },
+          update: {
+            dataforseoRank: row.rank ?? row.mainDomainRank,
+            dataforseoBacklinks: row.backlinks,
+            referringDomains: row.referringDomains,
+            dataforseoSpamScore: row.spamScore,
+            dataforseoFetchedAt: now,
+            linkDataRelease: "DataForSEO pages_summary",
+            linkDataFetchedAt: now,
+          },
+        });
+      }
+    } catch {
+      // ranking still returns
+    }
+  }
+
+  return out;
 }

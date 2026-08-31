@@ -5,8 +5,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:5432/unused";
@@ -63,7 +63,27 @@ const rewrite = (file) => {
   );
   return p;
 };
+
+function rewriteAll(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) rewriteAll(path);
+    else if (entry.name.endsWith(".js")) {
+      const rel = relative(out, path).replace(/\\/g, "/");
+      const src = readFileSync(path, "utf8");
+      if (!src.includes('"@/')) continue;
+      const depth = rel.split("/").length - 1;
+      const prefix = "../".repeat(depth) || "./";
+      writeFileSync(
+        path,
+        src.replace(/from "@\/(.*?)"/g, (_m, rest) => `from "${prefix}${rest}.js"`),
+      );
+    }
+  }
+}
+
 SOURCES.forEach(rewrite);
+rewriteAll(out);
 
 const config = await import(pathToFileURL(join(out, "lib/dataforseo/config.js")).href);
 const errors = await import(pathToFileURL(join(out, "lib/dataforseo/errors.js")).href);
@@ -233,6 +253,7 @@ check(
     { DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" },
     () =>
       backlinks.fetchBulkRanks(["wikipedia.org", "cinnamonsnail.com"], {
+        credentials: { login: "u", password: "p" },
         fetchImpl: async () =>
           new Response(
             JSON.stringify({
@@ -284,6 +305,7 @@ check(
     { DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" },
     () =>
       backlinks.fetchBulkRanks(["example.com"], {
+        credentials: { login: "u", password: "p" },
         fetchImpl: async () =>
           new Response(
             JSON.stringify({
@@ -305,10 +327,69 @@ check(
 }
 
 {
+  const { rows, cost } = await withEnv(
+    { DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" },
+    () =>
+      backlinks.fetchBulkPagesSummary(
+        ["https://cinnamonsnail.com/", "cinnamonsnail.com"],
+        {
+          credentials: { login: "u", password: "p" },
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({
+                status_code: 20000,
+                cost: 0.02,
+                tasks: [
+                  {
+                    status_code: 20000,
+                    cost: 0.02,
+                    result: [
+                      {
+                        items: [
+                          {
+                            url: "https://cinnamonsnail.com/",
+                            rank: 22,
+                            main_domain_rank: 39,
+                            backlinks: 120,
+                            referring_domains: 40,
+                            backlinks_spam_score: 5,
+                          },
+                          {
+                            url: "cinnamonsnail.com",
+                            rank: 39,
+                            main_domain_rank: 39,
+                            backlinks: 800,
+                            referring_domains: 210,
+                            backlinks_spam_score: 4,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+        },
+      ),
+  );
+  check("bulk pages summary cost", cost === 0.02);
+  check(
+    "page backlinks from bulk_pages_summary",
+    rows.some((r) => r.backlinks === 120),
+  );
+  check(
+    "domain referring_domains from bulk_pages_summary",
+    rows.some((r) => r.referringDomains === 210),
+  );
+}
+
+{
   let code = "";
   await withEnv({ DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" }, async () => {
     try {
       await backlinks.fetchBacklinkSummary("unknown.invalid", {
+        credentials: { login: "u", password: "p" },
         fetchImpl: async () =>
           new Response(
             JSON.stringify({
@@ -334,6 +415,7 @@ check(
         [{ targets: ["a.com"] }],
         {
           timeoutMs: 20,
+          credentials: { login: "u", password: "p" },
           fetchImpl: async (_url, init) =>
             new Promise((_resolve, reject) => {
               init.signal.addEventListener("abort", () => {

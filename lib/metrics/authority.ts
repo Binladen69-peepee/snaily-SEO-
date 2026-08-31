@@ -23,6 +23,7 @@ import {
   corpusSize,
   type DomainVisibility,
 } from "@/lib/metrics/visibility";
+import { fetchMozMetrics, mozConfigured } from "@/lib/moz/client";
 
 /**
  * Domain Authority and Trust.
@@ -74,7 +75,7 @@ function logScale(value: number, ceiling: number): number {
 
 export type ScoreTerm = { label: string; detail: string; weight: number; contribution: number };
 
-export type AuthoritySource = "dataforseo" | "snaily" | "unavailable";
+export type AuthoritySource = "moz" | "dataforseo" | "snaily" | "unavailable";
 
 export type DomainAuthority = {
   domain: string;
@@ -227,6 +228,40 @@ export function scoreDomain(
 }
 
 /** Build a DomainAuthority row from a DataForSEO Rank value. */
+/**
+ * A DomainAuthority built from Moz's own Domain Authority.
+ *
+ * This is the only source that may be called DA without qualification, because
+ * it is the metric Moz publishes. Everything else in this file is a stand-in
+ * for it and is labelled as such.
+ */
+export function authorityFromMoz(
+  domain: string,
+  da: number,
+  linkingRootDomains: number | null = null,
+): DomainAuthority {
+  return {
+    domain,
+    source: "moz",
+    signalCount: 1,
+    openPageRank: null,
+    referringDomains: linkingRootDomains,
+    terms: [
+      {
+        label: "Moz Domain Authority",
+        detail: `DA ${String(da)} / 100 from the Moz Links API`,
+        weight: 1,
+        contribution: da,
+      },
+    ],
+    score: real(
+      da,
+      "Moz Domain Authority — Moz's own 0-100 score, from the Moz Links API.",
+    ),
+    trust: real(da, "Moz Domain Authority, used as the trust signal."),
+  };
+}
+
 export function authorityFromDataForSeo(
   domain: string,
   rank: number,
@@ -300,6 +335,40 @@ export async function getDomainAuthority(
 
   const out = new Map<string, DomainAuthority>();
   if (domains.length === 0) return out;
+
+  /*
+   * Moz first, because DA and PA are Moz's metrics and only Moz produces them.
+   * The column was showing DataForSEO Rank under a "DA" heading: 39 for
+   * cinnamonsnail.com where Moz says 48-49. Different index, different score,
+   * not a discrepancy that tuning can close.
+   */
+  if (await mozConfigured()) {
+    try {
+      const { rows } = await fetchMozMetrics(domains);
+      const byTarget = new Map(
+        rows.map((r) => [r.target.replace(/^www\./, "").toLowerCase(), r]),
+      );
+      const missing: string[] = [];
+      for (const domain of domains) {
+        const row = byTarget.get(domain);
+        if (row && row.domainAuthority != null) {
+          out.set(
+            domain,
+            authorityFromMoz(domain, row.domainAuthority, row.linkingRootDomains),
+          );
+        } else {
+          missing.push(domain);
+        }
+      }
+      if (missing.length === 0) return out;
+      // Anything Moz did not know falls through to the providers below.
+      domains.length = 0;
+      domains.push(...missing);
+    } catch {
+      // Moz down or unauthorised: the fallbacks below still answer, and the
+      // Integrations page reports the provider's own health.
+    }
+  }
 
   // Provider-backed path first — never fabricate ranks when DFS returns null.
   if (dataForSeoConfigured()) {

@@ -475,7 +475,10 @@ export function RankTrackerView({
           Search Console is authorised but <strong>no property is selected</strong>,
           so Google has never synced and cannot suggest keywords you already rank
           for. Live rank checks below work regardless.{" "}
-          <Link href="/projects" className="text-primary hover:underline">
+          <Link
+            href={projectId ? `/projects/${projectId}` : "/projects"}
+            className="text-primary hover:underline"
+          >
             Choose a property
           </Link>
           .

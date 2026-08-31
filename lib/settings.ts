@@ -18,6 +18,8 @@ export type SettingKey =
   | "SERPAPI_KEY"
   | "OPENPAGERANK_API_KEY"
   | "CRAWLGRAPH_API_KEY"
+  | "MOZ_ACCESS_ID"
+  | "MOZ_SECRET_KEY"
   | "DATAFORSEO_LOGIN"
   | "DATAFORSEO_PASSWORD"
   | "GROK_API_KEY"
@@ -58,6 +60,22 @@ export const SETTINGS: SettingSpec[] = [
       "Referring-domain counts from the Common Crawl webgraph — the only free source of real inbound-link data. Free tier is 15 lookups a month, so results are cached for 30 days and never fetched automatically.",
     secret: true,
     placeholder: "cg_live_… from crawlgraph.com",
+  },
+  {
+    key: "MOZ_ACCESS_ID",
+    label: "Moz Access ID",
+    description:
+      "From moz.com/api/dashboard. The only source of real Domain Authority and Page Authority — without it those columns fall back to DataForSEO Rank, which is a different metric on a different index.",
+    secret: true,
+    placeholder: "mozscape-xxxxxxxxxx",
+  },
+  {
+    key: "MOZ_SECRET_KEY",
+    label: "Moz Secret Key",
+    description:
+      "The secret half of the Moz API credential. Never exposed to the browser.",
+    secret: true,
+    placeholder: "Secret key from the Moz API dashboard",
   },
   {
     key: "DATAFORSEO_LOGIN",

@@ -135,7 +135,7 @@ export function KeywordDetailView({
                 <div>
                   <dt
                     className="text-xs text-muted-foreground"
-                    title="Domain strength — DataForSEO Rank when connected, otherwise Snaily Domain Authority. Not Moz DA."
+                    title="Domain strength. Real Moz Domain Authority when Moz API credentials are set in Integrations; otherwise DataForSEO Rank, which is a different metric on a different index and will not match Moz."
                   >
                     DA
                   </dt>

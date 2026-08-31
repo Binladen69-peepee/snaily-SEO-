@@ -14,7 +14,13 @@ export async function listSearchConsoleSites(
 
   return (res.data.siteEntry ?? [])
     .filter((s) => s.siteUrl)
-    .map((s) => ({ id: s.siteUrl!, name: s.siteUrl! }))
+    .map((s) => {
+      const id = s.siteUrl!;
+      const name = id.startsWith("sc-domain:")
+        ? `Domain · ${id.slice("sc-domain:".length)}`
+        : id;
+      return { id, name };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

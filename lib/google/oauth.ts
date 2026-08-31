@@ -79,8 +79,12 @@ export type OAuthState = {
   nonce: string;
   /** Where to land after a successful sign-in. */
   next?: string;
-  /** "drive" adds Drive scopes onto an existing Google account. */
-  intent?: "login" | "drive";
+  /**
+   * login  — create a session from the Google email (must already be a user)
+   * connect — attach GSC/GA4 tokens to the signed-in session (email may differ)
+   * drive  — incremental Drive grant on the signed-in session
+   */
+  intent?: "login" | "connect" | "drive";
 };
 
 export function encodeState(state: OAuthState): string {
@@ -103,6 +107,7 @@ export function getAuthUrl(
   state: string,
   origin: string,
   extraScopes: string[] = [],
+  loginHint?: string,
 ): string {
   return createOAuth2Client(origin).generateAuthUrl({
     access_type: "offline",
@@ -111,6 +116,7 @@ export function getAuthUrl(
     include_granted_scopes: true,
     scope: [...LOGIN_SCOPES, ...extraScopes],
     state,
+    ...(loginHint ? { login_hint: loginHint } : {}),
   });
 }
 

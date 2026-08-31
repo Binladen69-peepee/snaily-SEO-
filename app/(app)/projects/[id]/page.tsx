@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { GoogleProperties } from "@/components/google-properties";
@@ -5,6 +6,7 @@ import { ProjectSettings } from "@/components/project-settings";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getGoogleAccountPublic } from "@/lib/google/account";
+import { autoLinkGoogleProperties } from "@/lib/google/auto-link";
 import { getProjects } from "@/lib/projects";
 import { getSetupSnapshot } from "@/lib/setup/state";
 
@@ -22,6 +24,21 @@ export default async function ProjectSettingsPage({
   ]);
 
   if (!project || !session) notFound();
+
+  /*
+   * Link the obvious property before reading the links back.
+   *
+   * This is a one-site install: the account sees one Search Console property
+   * and one Analytics property, both on this project's domain. Making the
+   * owner pick between one option is not a choice, it is an obstacle - and the
+   * obstacle is why Search Console never synced. Ambiguous cases still fall
+   * through to the picker below.
+   */
+  const head = await headers();
+  const host = head.get("x-forwarded-host") ?? head.get("host") ?? "";
+  const proto =
+    head.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  await autoLinkGoogleProperties(session.userId, id, `${proto}://${host}`);
 
   // Property links live on the project; tokens never leave the server.
   const [links, account, snapshot] = await Promise.all([

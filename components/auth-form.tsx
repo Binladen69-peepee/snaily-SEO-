@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { GoogleOAuthDiagnostics } from "@/components/google-oauth-diagnostics";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -111,6 +112,7 @@ export function AuthForm({
                 {googleError}
               </p>
             )}
+            <GoogleOAuthDiagnostics />
 
             <Button
               type="button"
