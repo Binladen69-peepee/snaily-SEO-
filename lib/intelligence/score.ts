@@ -1,4 +1,9 @@
-import { ISSUE_LABEL, type IssueSeverity } from "@/lib/audit/types";
+import {
+  ISSUE_LABEL,
+  isDefect,
+  type Issue,
+  type IssueSeverity,
+} from "@/lib/audit/types";
 import {
   EFFORT_COST,
   EFFORT_LABEL,
@@ -56,6 +61,26 @@ function capReasons(reasons: ScoreReason[], max: number): Score {
  * Shallow URLs are the pages people actually land on, and heavily linked pages
  * are the ones the site itself treats as important.
  */
+/**
+ * The issues a score is allowed to count.
+ *
+ * Three rows are informational: a decorative image correctly marked, a link to
+ * a host that refused the crawler, and a page the crawler itself could not
+ * read. They are worth showing — they answer "why is this not in the report?" —
+ * but they are not work, and scoring them ranked pages by things the author
+ * cannot do anything about.
+ *
+ * It read as absurd on the page it hurt most: "11 decorative images correctly
+ * marked - no alt needed" earned priority points and helped put that page on
+ * Fix these first. And after a rate-limited crawl, 45 pages the host answered
+ * with 429 would have been ranked as work.
+ *
+ * So the scores count defects, and the detail list still shows everything.
+ */
+function actionable(issues: Issue[]): Issue[] {
+  return issues.filter((i) => isDefect(i.code));
+}
+
 export function importancePoints(
   page: PageSnapshot,
   /** Real Google data for this URL, when Search Console is connected. */
@@ -126,14 +151,15 @@ export function priorityScore(
   decay: DecaySignal[],
   perf?: PagePerformance,
 ): Score {
-  if (page.issues.length === 0 && decay.length === 0) {
+  const defects = actionable(page.issues);
+  if (defects.length === 0 && decay.length === 0) {
     return { score: 0, reasons: [] };
   }
 
   const reasons: ScoreReason[] = [];
 
   // 1. Issues, worst first.
-  const issueReasons = page.issues
+  const issueReasons = defects
     .map((i) => ({
       label: ISSUE_LABEL[i.code],
       detail: i.detail,
@@ -145,7 +171,7 @@ export function priorityScore(
   reasons.push(...capReasons(issueReasons, MAX_ISSUE_POINTS).reasons);
 
   // 2. Importance — only matters if there is something to fix.
-  if (page.issues.length > 0) {
+  if (defects.length > 0) {
     const importance = importancePoints(page, perf);
     if (importance) reasons.push(importance);
   }
@@ -179,9 +205,10 @@ export function opportunityScore(
   page: PageSnapshot,
   perf?: PagePerformance,
 ): Score {
-  if (page.issues.length === 0) return { score: 0, reasons: [] };
+  const defects = actionable(page.issues);
+  if (defects.length === 0) return { score: 0, reasons: [] };
 
-  const reasons: ScoreReason[] = page.issues
+  const reasons: ScoreReason[] = defects
     .map((i) => {
       const rec = RECOMMENDATIONS[i.code];
       return {
@@ -213,7 +240,7 @@ export function opportunityScore(
 
 /** 0–100. A page with no issues is 100. */
 export function pageHealth(page: PageSnapshot): number {
-  const penalty = page.issues.reduce(
+  const penalty = actionable(page.issues).reduce(
     (sum, i) => sum + PRIORITY_POINTS[i.severity],
     0,
   );

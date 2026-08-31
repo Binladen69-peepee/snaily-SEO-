@@ -17,6 +17,18 @@ export default async function ContentIntelligencePage() {
   const report =
     session && project ? await buildReport(session.userId, project.id) : null;
 
+  /*
+   * Which crawl this screen is showing, said plainly.
+   *
+   * Everything here comes from one audit — buildReport reads the latest
+   * completed one and only that one's pages — but the screen never said which,
+   * so a report the owner had already fixed the site against looked like a
+   * current one. Naming the crawl, its size and what it still finds makes a
+   * stale reading obvious instead of arguable.
+   */
+  const openIssues =
+    report?.pages.reduce((sum, page) => sum + page.issues.length, 0) ?? 0;
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -26,7 +38,7 @@ export default async function ContentIntelligencePage() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {report
-              ? `Audit from ${new Date(report.auditDate).toLocaleString()} · ${String(report.summary.totalPages)} pages`
+              ? `Crawled ${new Date(report.auditDate).toLocaleString()} · ${String(report.summary.totalPages)} pages audited · ${String(openIssues)} current issue${openIssues === 1 ? "" : "s"}`
               : "Prioritised fixes drawn from your latest site audit."}
           </p>
         </div>

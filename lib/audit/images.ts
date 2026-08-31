@@ -163,6 +163,24 @@ export function classifyImage(
  * Images are read from the page's content root when it has one, so a theme's
  * related-posts grid or category index cannot inflate the count of a post.
  */
+/**
+ * Where an image actually comes from.
+ *
+ * `src` is the common case, but a lazy-loading theme leaves it empty or on a
+ * placeholder and puts the real file in `data-src`, and a responsive image may
+ * carry only a `srcset`. Reading just `src` therefore missed the source of
+ * genuine defects on exactly the pages most likely to have them.
+ */
+function sourceOf(el: Cheerio<Element>): string {
+  const direct = attr(el, "src") ?? attr(el, "data-src") ?? attr(el, "data-lazy-src") ?? "";
+  if (direct.trim() !== "") return direct.trim();
+
+  // "a.jpg 1x, b.jpg 2x" — the first candidate identifies the image.
+  const set = attr(el, "srcset") ?? attr(el, "data-srcset") ?? "";
+  const first = set.split(",")[0]?.trim().split(/\s+/)[0] ?? "";
+  return first.trim();
+}
+
 export function auditImages($: CheerioAPI): ImageAudit {
   let root: Cheerio<Element> | null = null;
   for (const selector of CONTENT_ROOTS) {
@@ -199,10 +217,20 @@ export function auditImages($: CheerioAPI): ImageAudit {
     out.total += 1;
     // Content image with no alt attribute at all: the genuine defect.
     if (attr(el, "alt") === undefined) {
-      out.missingAlt += 1;
-      const src = attr(el, "src") ?? attr(el, "data-src") ?? "";
+      const src = sourceOf(el);
+      /*
+       * Counted per distinct image, and only when there is an image to name.
+       *
+       * Two things follow from that. A responsive image repeated by the theme
+       * at several sizes is one defect and not four, because the same source
+       * is only recorded once. And the count can never outrun its evidence:
+       * an `img` with no resolvable source at all is a placeholder the reader
+       * never sees, cannot be pointed at in the report and cannot be fixed, so
+       * counting it only produced an issue nobody could act on.
+       */
       if (src !== "" && !out.missingAltSrc.includes(src)) {
         out.missingAltSrc.push(src);
+        out.missingAlt += 1;
       }
     }
   });

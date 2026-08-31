@@ -31,6 +31,7 @@
     "test:draft-export": "node --env-file=.env scripts/test-draft-export.mjs",
     "test:style": "node scripts/test-style.mjs",
     "test:content-audit": "node scripts/test-content-audit.mjs",
+    "test:intelligence-cards": "node scripts/test-intelligence-cards.mjs",
     "test:link-typography": "node scripts/test-link-typography.mjs",
     "test:moz": "node scripts/test-moz.mjs",
     "test:cuisine-gate": "node scripts/test-cuisine-gate.mjs",

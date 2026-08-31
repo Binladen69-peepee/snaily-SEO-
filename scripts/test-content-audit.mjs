@@ -223,6 +223,7 @@ try {
     lastModified: null,
     imagesTotal: 10,
     imagesMissingAlt: 0,
+    imagesMissingAltSrc: [],
     imagesDecorative: 0,
     imagesChrome: 0,
     internalLinks: [],
@@ -248,7 +249,12 @@ try {
     "they are reported as correctly-marked decorative instead",
   );
   check(
-    codes(page({ imagesMissingAlt: 2 })).includes("missing_alt"),
+    codes(
+      page({
+        imagesMissingAlt: 2,
+        imagesMissingAltSrc: ["/hero.jpg", "/step-2.jpg"],
+      }),
+    ).includes("missing_alt"),
     "a real missing alt still raises the issue",
   );
   check(
@@ -322,6 +328,96 @@ try {
     runChecks(informationalOnly, ctx).filter((i) => isDefect(i.code)).length === 0,
     "but counts as clean, because there is nothing to fix",
   );
+
+  /* ------------------------------------------------------------------ */
+  console.log("\nD — a missing-alt count must carry the image it refers to");
+
+  /*
+   * The client verified by hand that the pages in his report had no missing
+   * alt text, and he was right: read through the current classifier,
+   * /vegan-taco-salad has 19 content images and none missing, while the stored
+   * crawl claimed defects. Those rows were written before the classifier
+   * existed — they counted every `img` without an alt attribute and recorded
+   * no source, because the old code had nothing to record.
+   *
+   * An unsourced count is unusable anyway: nothing to name in the report,
+   * nothing for the fix action to act on, nothing to verify. So it is not an
+   * issue, and the checks agree with the crawler instead of contradicting it.
+   */
+  const stale = page({ imagesTotal: 30, imagesMissingAlt: 30, imagesMissingAltSrc: [] });
+  check(
+    !codes(stale).includes("missing_alt"),
+    "a count with no recorded source raises no issue (the stale-crawl row)",
+  );
+  check(
+    isDefect("missing_alt") && !codes(stale).some(isDefect),
+    "so the page counts as clean, and cannot inflate priority or opportunity",
+  );
+
+  const real = page({
+    imagesTotal: 4,
+    imagesMissingAlt: 1,
+    imagesMissingAltSrc: ["https://cinnamonsnail.com/wp-content/uploads/taco.jpg"],
+  });
+  check(
+    codes(real).includes("missing_alt"),
+    "a sourced count still raises the issue — the check is not simply disabled",
+  );
+
+  /* The crawler half of the same invariant. */
+  const responsive = auditImages(
+    load(
+      `<main><article>
+         <img src="/taco-300.jpg">
+         <img src="/taco-300.jpg">
+         <img src="/taco-300.jpg">
+       </article></main>`,
+    ),
+  );
+  check(
+    responsive.missingAlt === 1 && responsive.missingAltSrc.length === 1,
+    "the same image repeated by a responsive theme is one defect, not three",
+    `missingAlt=${String(responsive.missingAlt)}`,
+  );
+
+  const srcsetOnly = auditImages(
+    load(
+      `<main><article>
+         <img srcset="/wedding-soup-600.jpg 1x, /wedding-soup-1200.jpg 2x">
+       </article></main>`,
+    ),
+  );
+  check(
+    srcsetOnly.missingAlt === 1 &&
+      srcsetOnly.missingAltSrc[0] === "/wedding-soup-600.jpg",
+    "a genuine defect carrying only a srcset is still found, and named",
+    srcsetOnly.missingAltSrc[0],
+  );
+
+  const placeholder = auditImages(
+    load(`<main><article><img class="lazy" data-src=""></article></main>`),
+  );
+  check(
+    placeholder.missingAlt === 0,
+    "an img with no resolvable source at all is not a reportable defect",
+  );
+
+  const lazy = auditImages(
+    load(`<main><article><img data-src="/lentil-meatballs.jpg"></article></main>`),
+  );
+  check(
+    lazy.missingAlt === 1 && lazy.missingAltSrc[0] === "/lentil-meatballs.jpg",
+    "but a lazy-loaded image with a real source is",
+  );
+
+  /* The invariant itself, over every shape above. */
+  check(
+    [responsive, srcsetOnly, placeholder, lazy].every(
+      (a) => a.missingAlt === a.missingAltSrc.length,
+    ),
+    "the count and the evidence can never disagree",
+  );
+
 } finally {
   built.cleanup();
 }

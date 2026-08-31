@@ -15,7 +15,7 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChangesPanel } from "@/components/intelligence/changes-panel";
 import { PageDetail } from "@/components/intelligence/page-detail";
@@ -215,6 +215,43 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
   const [pageNum, setPageNum] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  /*
+   * Where a spotlight card sends you.
+   *
+   * Both card lists already called focusPage, which filtered the table to that
+   * page and expanded its row — correctly, and completely invisibly: the table
+   * is a screenful below the cards, so the detail opened somewhere the reader
+   * was not looking and the cards read as dead. The click was never the broken
+   * part; arriving was.
+   *
+   * The scroll waits for the row to exist, which is why it is an effect and
+   * not part of the click: React has not committed the new filter state at the
+   * moment the handler runs, so the row is not in the document yet.
+   */
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const [focusUrl, setFocusUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusUrl === null) return;
+    setFocusUrl(null);
+
+    const row = document.querySelector<HTMLElement>(
+      `[data-page-row="${CSS.escape(focusUrl)}"]`,
+    );
+    const target = row ?? resultsRef.current;
+    if (target === null) return;
+
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({
+      behavior: still ? "auto" : "smooth",
+      block: "center",
+    });
+
+    // Keyboard and screen-reader users have to land there too, not just the
+    // viewport: the collapse control is the top of the detail that just opened.
+    row?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  }, [focusUrl]);
+
   const attention = useMemo(
     () => report.pages.filter((p) => p.priority.score > 0).slice(0, 5),
     [report.pages],
@@ -308,6 +345,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
     setIssueFilter("");
     setPageNum(1);
     setExpanded(page.url);
+    setFocusUrl(page.url);
   }
 
   function clearFilters() {
@@ -482,7 +520,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
       )}
 
       {/* ---------- Filters ---------- */}
-      <div className="space-y-2">
+      <div ref={resultsRef} className="space-y-2">
         <div className="flex items-center gap-2">
           <Filter className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">Filter pages</span>
@@ -655,7 +693,7 @@ export function IntelligenceView({ report }: { report: IntelReport }) {
 
                   if (open) {
                     return (
-                      <tr key={p.url}>
+                      <tr key={p.url} data-page-row={p.url}>
                         <td colSpan={report.summary.hasPerformance ? 7 : 6} className="p-0">
                           <div className="flex items-center gap-2 bg-accent/40 px-3 py-2.5">
                             <button

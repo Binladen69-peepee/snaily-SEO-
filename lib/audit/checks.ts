@@ -32,6 +32,28 @@ function analysed(p: CrawledPage): boolean {
   return p.outcome.state === "valid" || p.outcome.state === "redirect";
 }
 
+/**
+ * Content images genuinely missing alt text, counted only where the crawl
+ * recorded which image.
+ *
+ * The count and the evidence are written together by lib/audit/images.ts, so
+ * for any current crawl this is just `imagesMissingAlt`. It differs on rows
+ * written BEFORE that classifier existed, which counted every `img` without an
+ * alt attribute — decorative markup, lazy-load placeholders and theme chrome
+ * alike — and recorded no source, because there was nothing to record. Those
+ * rows are why pages the owner had verified by hand kept being reported: the
+ * archive page at /vegan-recipes stored 30 missing, and the same page read
+ * through the current classifier has 5 content images and none missing.
+ *
+ * An unsourced count is also unusable in its own right. It cannot be shown
+ * (there is no image to name), it cannot be fixed (the fix action needs a src)
+ * and it cannot be verified. So the issue requires its evidence, which keeps
+ * the card summary, the detail list and the fix action reading the same fact.
+ */
+function missingAltCount(p: CrawledPage): number {
+  return p.imagesMissingAltSrc.length === 0 ? 0 : p.imagesMissingAlt;
+}
+
 const CHECKS: Record<string, Check> = {
   /*
    * A real HTTP failure. Cloudflare answers this crawler with 429 on the
@@ -127,17 +149,19 @@ const CHECKS: Record<string, Check> = {
    */
   missing_alt: {
     severity: "low",
-    run: (p) =>
-      p.imagesMissingAlt > 0
-        ? `${String(p.imagesMissingAlt)} of ${String(p.imagesTotal)} content image${p.imagesTotal === 1 ? "" : "s"} missing alt text`
-        : null,
+    run: (p) => {
+      const missing = missingAltCount(p);
+      return missing > 0
+        ? `${String(missing)} of ${String(p.imagesTotal)} content image${p.imagesTotal === 1 ? "" : "s"} missing alt text`
+        : null;
+    },
   },
 
   /** Informational: shows the author their decorative markup was understood. */
   decorative_image: {
     severity: "low",
     run: (p) =>
-      p.imagesDecorative > 0 && p.imagesMissingAlt === 0
+      p.imagesDecorative > 0 && missingAltCount(p) === 0
         ? `${String(p.imagesDecorative)} decorative image${p.imagesDecorative === 1 ? "" : "s"} correctly marked — no alt needed`
         : null,
   },
