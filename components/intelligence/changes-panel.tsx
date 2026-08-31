@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp, FileMinus2, FilePlus2, Minus } from "lucide-react";
 
+import { formatCrawlTime } from "@/lib/intelligence/dates";
+
 import { Badge } from "@/components/ui/badge";
 import { ISSUE_LABEL } from "@/lib/audit/types";
 import type { Comparison, IssueDelta } from "@/lib/intelligence/types";
@@ -90,7 +92,7 @@ export function ChangesPanel({ comparison }: { comparison: Comparison }) {
           <h2 className="font-semibold">What changed since the last crawl</h2>
           <p className="text-xs text-muted-foreground">
             Compared with audit from{" "}
-            {new Date(comparison.previousDate).toLocaleString()}
+            {formatCrawlTime(comparison.previousDate)}
           </p>
         </div>
         {improved && !regressed && (

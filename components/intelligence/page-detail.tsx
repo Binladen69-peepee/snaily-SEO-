@@ -16,7 +16,9 @@ import {
   RECOMMENDATIONS,
   type Effort,
 } from "@/lib/intelligence/recommendations";
+import { formatDay } from "@/lib/intelligence/dates";
 import type { PageIntel } from "@/lib/intelligence/types";
+import { formatNumber } from "@/lib/keywords/format";
 import { AltFixPanel } from "@/components/intelligence/alt-fix-panel";
 
 const EFFORT_VARIANT: Record<Effort, "success" | "warning" | "destructive"> = {
@@ -211,13 +213,13 @@ export function PageDetail({
             <div>
               <p className="text-xs text-muted-foreground">Clicks</p>
               <p className="tabular text-xl font-semibold">
-                {page.performance.clicks.toLocaleString()}
+                {formatNumber(page.performance.clicks)}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Impressions</p>
               <p className="tabular text-xl font-semibold">
-                {page.performance.impressions.toLocaleString()}
+                {formatNumber(page.performance.impressions)}
               </p>
             </div>
             <div>
@@ -241,7 +243,7 @@ export function PageDetail({
         {page.lastModified && (
           <MetaRow
             label="Last modified"
-            value={new Date(page.lastModified).toLocaleDateString()}
+            value={formatDay(page.lastModified)}
           />
         )}
       </div>

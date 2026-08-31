@@ -3,6 +3,7 @@ import { Gauge } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { IntelligenceView } from "@/components/intelligence/intelligence-view";
 import { getSession } from "@/lib/auth";
+import { formatCrawlTime } from "@/lib/intelligence/dates";
 import { buildReport } from "@/lib/intelligence/report";
 import { getActiveProject } from "@/lib/projects";
 
@@ -29,30 +30,9 @@ export default async function ContentIntelligencePage() {
   const openIssues =
     report?.pages.reduce((sum, page) => sum + page.issues.length, 0) ?? 0;
 
-  /*
-   * Stated in UTC, with the zone named.
-   *
-   * toLocaleString() with no timezone uses whichever the runtime is in: UTC on
-   * Vercel when this renders, the reader's own when React reaches it, and the
-   * two strings disagree for everyone outside UTC. That is a real hydration
-   * mismatch and it logged a React error on every load from, say, New Jersey.
-   *
-   * Guessing the reader's zone server-side would only move the guess. Naming
-   * the zone is unambiguous for anyone, and a crawl timestamp is read for
-   * "how old is this", which UTC answers exactly as well.
-   */
-  const crawledAt =
-    report === null
-      ? ""
-      : new Intl.DateTimeFormat("en-GB", {
-          timeZone: "UTC",
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }).format(new Date(report.auditDate));
+  // Formatted in UTC by a shared helper: this renders on Vercel and hydrates
+  // in the reader's timezone, and the two must produce the same string.
+  const crawledAt = report === null ? "" : formatCrawlTime(report.auditDate);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
@@ -63,7 +43,7 @@ export default async function ContentIntelligencePage() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {report
-              ? `Crawled ${crawledAt} UTC · ${String(report.summary.totalPages)} pages audited · ${String(openIssues)} current issue${openIssues === 1 ? "" : "s"}`
+              ? `Crawled ${crawledAt} · ${String(report.summary.totalPages)} pages audited · ${String(openIssues)} current issue${openIssues === 1 ? "" : "s"}`
               : "Prioritised fixes drawn from your latest site audit."}
           </p>
         </div>

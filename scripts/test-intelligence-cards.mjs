@@ -255,6 +255,38 @@ try {
     "a stored missing-alt issue with no image to name is dropped",
   );
 
+  /*
+   * No screen on this page may format a date or a number by asking the
+   * runtime which locale it is in.
+   *
+   * The page renders on Vercel in UTC and hydrates in the reader's own zone,
+   * so a bare toLocaleString() produced two different strings and React logged
+   * a hydration error on every load from anywhere else. Three places on this
+   * one screen were doing it, which is why fixing the first did not silence
+   * it.
+   */
+  const dateSources = [
+    "app/(app)/content/page.tsx",
+    "components/intelligence/changes-panel.tsx",
+    "components/intelligence/page-detail.tsx",
+    "components/intelligence/intelligence-view.tsx",
+  ];
+  for (const file of dateSources) {
+    const text = fs.readFileSync(file, "utf8");
+    // Comments explaining the rule are allowed to name the method.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+    check(
+      !/toLocale(String|DateString|TimeString)\(\)/.test(code),
+      `${file.split("/").pop()} formats nothing by runtime locale`,
+    );
+  }
+
+  const dates = fs.readFileSync("lib/intelligence/dates.ts", "utf8");
+  check(
+    /timeZone: "UTC"/.test(dates) && /Intl\.DateTimeFormat\("en-GB"/.test(dates),
+    "the shared helper pins both the zone and the locale",
+  );
+
   // The card summary is drawn from the same reasons the detail lists.
   const reasons = priorityScore(real, []).reasons.map((r) => r.label);
   check(
