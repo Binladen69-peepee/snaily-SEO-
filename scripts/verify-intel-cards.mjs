@@ -72,7 +72,7 @@ console.log("\nThe dashboard as it loads");
 
 const provenance = (await page.locator("p.text-sm").first().textContent()) ?? "";
 check(
-  /Crawled .+ pages audited .+ current issue/.test(provenance),
+  /Crawled .+ UTC .+ pages audited .+ current issue/.test(provenance),
   "the header names the crawl, its size and what it currently finds",
   provenance.trim().slice(0, 90),
 );
