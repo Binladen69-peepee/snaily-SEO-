@@ -563,9 +563,15 @@ export async function sections(ctx: StageContext): Promise<StageResult> {
      * there is no second section for the model to lose it behind. Once only:
      * if a section will not come back twice, the outline's default heading is
      * better than an unbounded retry loop.
+     *
+     * This used to skip groups holding a single section, on the reasoning that
+     * a lone section has nothing to be lost behind. But "related" and the
+     * recipe card are groups of one, and a reply that came back empty for one
+     * of those was filed empty with no retry at all — which is the case most
+     * worth retrying, because the document format requires the section.
      */
     const missing = group.keys.filter((k) => (written[k] ?? "") === "");
-    if (missing.length > 0 && group.keys.length > 1) {
+    if (missing.length > 0) {
       ctx.log("section_missing", { group: group.id, keys: missing.join(",") });
 
       for (const key of missing) {

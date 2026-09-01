@@ -68,6 +68,7 @@ Drafts are attributed to the author configured in Settings → Snaily SEO
 ```bash
 npm run test:content-audit      # alt / link classification, clean-page maths
 npm run test:intelligence-cards # spotlight cards, stale issues, score inputs
+npm run test:drafter-format     # document order, card + Yoast fields, FSRI IDs
 npm run test:fix-actions        # the media-alt fix and its refusals
 npm run test:runtime-settings   # provider resolution order, masking
 npm run test:integrations       # provider grouping, verify-before-save
@@ -103,6 +104,19 @@ Vercel serves those chunks correctly.
 
 ## Things that will bite you
 
+- **The document ends in four parts, in this order:** the article, "you'll
+  also love these" plus the four verified FSRI post IDs, the recipe card, the
+  Yoast block. `lib/drafter/document-sections.ts` renders the last three and
+  the `save` stage calls it. That module existed for weeks with nothing calling
+  it, so the card and Yoast values never appeared in the document at all —
+  check `npm run test:drafter-format` before assuming it is wired.
+- **Which four posts the Feast grid gets is decided in one place**,
+  `lib/drafter/related-posts.ts`. The document prints what it returns and the
+  exporter sends what it returns. Do not resolve them separately again.
+- **The Yoast block in the document is not page content.** `isDocumentMeta()`
+  in `lib/wordpress/sections.ts` makes the exporter consume it as fields;
+  without that it is reported as an unmatched section and flags every export
+  for review.
 - **Emoji headings are load-bearing.** `lib/wordpress/sections.ts` maps a post's
   H2s onto template sections by their text. Renaming a heading changes where its
   content lands on export.

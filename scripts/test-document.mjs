@@ -226,7 +226,7 @@ try {
 
   const seoHtml = renderSeoSection(doc.seo);
   check(seoHtml.includes(SEO_HEADING), "there is an SEO section");
-  check(seoHtml.includes("SEO Meta description"), "  it shows the meta description");
+  check(seoHtml.includes("Meta description"), "  it shows the meta description");
   // This fixture has no slug, so the row must be absent — that is the point.
   check(!seoHtml.includes("URL slug"), "  an unset slug is omitted");
   check(

@@ -38,6 +38,10 @@ export type WprmRecipePayload = {
   prep_time: number;
   cook_time: number;
   cost: string;
+  /** Pressing, resting, chilling — WPRM adds it into the total. */
+  custom_time: number;
+  /** The card's own tips, which WPRM renders under the instructions. */
+  notes: string;
   ingredients: WprmIngredient[];
   instructions: WprmInstruction[];
   equipment: string[];
@@ -117,12 +121,35 @@ export function buildRecipePayload(
 
   return {
     name: card.name.trim() || opts.title.trim(),
-    summary: card.description.trim(),
+    /*
+     * The same sentence the document prints as Summary.
+     *
+     * The document showed `openingSentence` and the card was sent
+     * `description`, so an author who wrote the card's opening line watched it
+     * reach the document and never reach WordPress.
+     */
+    summary: card.openingSentence.trim() || card.description.trim(),
     servings,
     servings_unit: unit,
     prep_time: card.prepMinutes > 0 ? card.prepMinutes : 0,
     cook_time: card.cookMinutes > 0 ? card.cookMinutes : 0,
-    cost: "",
+
+    /*
+     * Cost, custom time and notes were being dropped on the floor.
+     *
+     * The connector has accepted all three since 1.5.0 and computes the total
+     * time from prep + cook + custom, so the loss was entirely on this side:
+     * the client's own lasagna card says "$18" and his torta card says
+     * "Pressing: 10 minutes", and neither reached the site. Nothing here is
+     * derived or guessed — each is a field the author filled in, passed
+     * through, and an empty one stays empty.
+     */
+    cost: card.estimatedCost.trim(),
+    custom_time: card.customMinutes > 0 ? card.customMinutes : 0,
+    notes: card.tips
+      .map((t) => t.trim())
+      .filter((t) => t !== "")
+      .join("\n"),
 
     // Verbatim. See the note at the top of this file.
     ingredients: card.ingredients
@@ -133,7 +160,8 @@ export function buildRecipePayload(
       .filter((step) => step.text.trim() !== "")
       .map((step) => ({ name: step.name.trim(), text: step.text.trim() })),
 
-    equipment: (opts.equipment ?? []).filter((e) => e.trim() !== ""),
+    // An explicit list wins; otherwise the card's own equipment is used.
+    equipment: (opts.equipment ?? card.equipment).filter((e) => e.trim() !== ""),
     course: card.category.trim() === "" ? [] : commaList(card.category),
     cuisine: card.cuisine.trim() === "" ? [] : commaList(card.cuisine),
     keyword: card.keywords.trim() === "" ? [] : commaList(card.keywords),

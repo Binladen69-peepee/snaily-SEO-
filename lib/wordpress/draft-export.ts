@@ -7,9 +7,12 @@ import {
 import {
   buildLinkIndex,
   resolveLinks,
-  resolveTarget,
   type LinkIndex,
 } from "@/lib/content/link-index";
+import {
+  resolveRelatedPosts,
+  type RelatedPost,
+} from "@/lib/drafter/related-posts";
 import {
   buildArticleDocument,
   excerptFor,
@@ -112,45 +115,20 @@ export type LinkReport = {
 /**
  * Recipes named in the closing section, resolved to real WordPress post IDs.
  *
- * The Feast grid takes IDs, not URLs, so this is the one place a link has to
- * become a number. Only titles that already resolved to a synced published
- * post are used; a name with no match is left out rather than guessed at.
+ * The matching itself lives in lib/drafter/related-posts.ts, because the
+ * document the author reads has to print the same four posts this sends. When
+ * the two worked it out separately, the document listed names and the post
+ * shipped a grid nobody had seen.
  */
 function relatedPostIds(
   article: ArticleContent,
   index: LinkIndex,
-): { wpId: number; title: string }[] {
+): RelatedPost[] {
   const section = article.sections.get("related");
   if (!section) return [];
-
-  const found = new Map<number, string>();
-
-  for (const el of section.body) {
-    // Anchors first: those have already been verified by the link pass.
-    for (const m of el.html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
-      const target = resolveTarget(index, m[1] ?? "", stripText(m[2] ?? ""));
-      if (target) found.set(target.wpId, target.title);
-    }
-    // Then plain list items, which the author often writes without links.
-    for (const m of el.html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)) {
-      const text = stripText(m[1] ?? "");
-      if (text === "") continue;
-      const target = resolveTarget(index, "", text);
-      if (target) found.set(target.wpId, target.title);
-    }
-  }
-
-  // The Feast grid renders four cards.
-  return [...found.entries()].slice(0, 4).map(([wpId, title]) => ({ wpId, title }));
+  return resolveRelatedPosts(index, section.body.map((el) => el.html).join("\n"));
 }
 
-function stripText(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 /* ---------------------------------------------------------------------------
  * Building the export

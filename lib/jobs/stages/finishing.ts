@@ -35,6 +35,17 @@ import { briefFor } from "@/lib/drafter/voice";
 import type { WriterKey } from "@/lib/drafter/voice/types";
 import { formatIngredients, formatSteps } from "@/lib/drafter/recipe-paste";
 import { parseRecipe } from "@/lib/drafter/recipe";
+import { buildArticleDocument } from "@/lib/drafter/document";
+import {
+  RECIPE_CARD_HEADING,
+  SEO_HEADING,
+  withDocumentSections,
+} from "@/lib/drafter/document-sections";
+import {
+  relatedSectionHtml,
+  resolveRelatedPosts,
+  type RelatedPost,
+} from "@/lib/drafter/related-posts";
 import { benchmark } from "@/lib/drafter/style-benchmark";
 import {
   failingSections,
@@ -1018,7 +1029,13 @@ export async function save(ctx: StageContext): Promise<StageResult> {
 
   const current = await prisma.article.findUnique({
     where: { id: article.id },
-    select: { title: true, editorial: true, revisions: true, content: true },
+    select: {
+      title: true,
+      editorial: true,
+      revisions: true,
+      content: true,
+      recipeCard: true,
+    },
   });
   if (current === null) {
     throw new StageFailure("article_gone", "The article was deleted while it was generating.");
@@ -1051,31 +1068,74 @@ export async function save(ctx: StageContext): Promise<StageResult> {
     tags: editorial.tags.length > 0 ? editorial.tags : (meta?.tags ?? []),
   };
 
+  /*
+   * The document the author reads is the document that ships.
+   *
+   * The recipe card and the Yoast values were real and exported correctly, and
+   * were nowhere in the document — a writer checking their work in Google Docs
+   * could not see the yield, the times, or the meta description about to go
+   * out under their name. The client asked for them in the document itself.
+   *
+   * The related section gets the four post IDs the Feast grid will actually
+   * render, resolved by the same code the exporter uses. A name that matched
+   * no published post is visibly absent here rather than silently missing from
+   * a grid on the live page.
+   */
+  const doc = buildArticleDocument({
+    title,
+    keyword: article.keyword,
+    content: html,
+    recipeCard: current.recipeCard,
+    editorial: merged,
+  });
+
+  let related: RelatedPost[] = [];
+  try {
+    const index = await buildLinkIndex(article.projectId);
+    related = resolveRelatedPosts(index, relatedSectionHtml(html));
+  } catch {
+    // No sync yet, or the index is unavailable. The section keeps the author's
+    // names; the export resolves them again when it runs.
+  }
+
+  const body = withDocumentSections(html, doc, related);
+
+  ctx.log("document_sections", {
+    fsriIds: related.length,
+    recipeCard: body.includes(RECIPE_CARD_HEADING),
+    yoast: body.includes(SEO_HEADING),
+  });
+
   await prisma.article.update({
     where: { id: article.id },
     data: {
       title,
-      content: html,
-      generated: html,
+      content: body,
+      generated: body,
       editorial: merged,
       phase: "draft",
       status: "draft",
       revisions: pushRevision(current.revisions, {
         kind: "outline",
         title,
-        content: html,
+        content: body,
       }),
     },
   });
 
   ctx.log("saved", {
     articleId: article.id,
-    chars: html.length,
+    chars: body.length,
     titleKept: !untouched,
   });
 
   return {
     kind: "done",
-    output: { chars: html.length, title, authorTitleKept: !untouched },
+    output: {
+      chars: body.length,
+      title,
+      authorTitleKept: !untouched,
+      fsriIds: related.length,
+    },
   };
 }

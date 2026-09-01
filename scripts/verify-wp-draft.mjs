@@ -171,6 +171,52 @@ async function main() {
   const html = String(draft.content ?? "");
   const seo = draft.seo ?? {};
 
+  /* ---- The document the author reads --------------------------------- */
+
+  console.log("\nThe document format");
+
+  const docHtml = String(article.content ?? "");
+  const place = (needle) => docHtml.indexOf(needle);
+  const iRelated = place("also love these");
+  const iFsriLine = place("FSRI post IDs");
+  const iCard = place("Recipe Card");
+  const iYoast = place("Yoast SEO");
+
+  ok(iRelated > 0, "the document ends on you'll also love these");
+  ok(iFsriLine > iRelated, "with the verified FSRI post IDs under it");
+  ok(iCard > iFsriLine, "then the recipe card");
+  ok(iYoast > iCard, "then the Yoast block, last");
+
+  const docIds = /FSRI post IDs:<\/strong>\s*([0-9,\s]+)/.exec(docHtml);
+  const docIdList = (docIds?.[1] ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  ok(docIdList.length === 4, "the document names four post IDs", docIdList.join(", "));
+
+  for (const [label, needle] of [
+    ["Summary", "<strong>Summary:</strong>"],
+    ["Yield", "<strong>Yield:</strong>"],
+    ["Prep Time", "<strong>Prep Time:</strong>"],
+    ["Cook Time", "<strong>Cook Time:</strong>"],
+    ["Total Time", "<strong>Total Time:</strong>"],
+    ["Courses", "<strong>Courses:</strong>"],
+    ["Cuisine", "<strong>Cuisine:</strong>"],
+    ["Ingredients", "<strong>Ingredients:</strong>"],
+    ["Instructions", "<strong>Instructions:</strong>"],
+  ]) {
+    ok(docHtml.includes(needle), `the card in the document carries ${label}`);
+  }
+
+  for (const [label, needle] of [
+    ["Focus keyphrase", "<strong>Focus keyphrase:</strong>"],
+    ["Meta description", "<strong>Meta description:</strong>"],
+    ["URL slug", "<strong>URL slug:</strong>"],
+    ["Primary Category", "<strong>Primary Category:</strong>"],
+  ]) {
+    ok(docHtml.includes(needle), `the Yoast block in the document carries ${label}`);
+  }
+
   console.log("\nPost");
   ok(draft.status === "draft", "final post status is DRAFT", draft.status);
   ok(draft.title === article.title || draft.title.length > 0, "title written", draft.title.slice(0, 50));
@@ -278,6 +324,28 @@ async function main() {
       String(seo.primary_category),
     );
   }
+
+  console.log("\nExcerpt");
+  const excerpt = String(draft.excerpt ?? "").replace(/<[^>]+>/g, "").trim();
+  ok(excerpt !== "", "the excerpt is populated", excerpt.slice(0, 60));
+  ok(
+    excerpt === String(seo.description ?? "").trim(),
+    "and is the same string as the meta description, not a second one",
+  );
+
+  console.log("\nThe worksheet does not ship");
+  ok(
+    !/Yoast SEO/i.test(html),
+    "the Yoast block is consumed as fields, never printed on the page",
+  );
+  ok(
+    !/FSRI post IDs/i.test(html),
+    "nor is the FSRI ID line — the grid renders instead",
+  );
+  ok(
+    !/<strong>URL slug:<\/strong>/i.test(html),
+    "nor the slug line",
+  );
 
   console.log("\nTerms");
   const cats = draft.categories ?? [];

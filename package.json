@@ -43,6 +43,7 @@
     "test:runtime-settings": "node scripts/test-runtime-settings.mjs",
     "test:control-panel": "node scripts/test-control-panel.mjs",
     "test:document": "node scripts/test-document.mjs",
+    "test:drafter-format": "node scripts/test-drafter-format.mjs",
     "test:dataforseo": "node scripts/test-dataforseo.mjs",
     "test:google-oauth": "node scripts/test-google-oauth.mjs",
     "test:serp-normalized": "node scripts/test-serp-normalized.mjs",

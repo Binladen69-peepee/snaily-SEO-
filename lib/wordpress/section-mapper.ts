@@ -12,6 +12,7 @@ import {
   type Block,
 } from "@/lib/wordpress/blocks";
 import { stepLabel } from "@/lib/drafter/steps";
+import { isDocumentMeta } from "@/lib/wordpress/sections";
 import {
   classifyHeading,
   headingLevel,
@@ -200,6 +201,20 @@ export function readArticle(html: string): ArticleContent {
       if (level <= 2) {
         closeStep();
         closeFaq();
+        /*
+         * The Yoast block is in the document for the author to read; its
+         * values ship as Yoast fields and categories, never as page content.
+         * Dropping it silently is right, and calling it "unmatched" is not —
+         * that warning means content the exporter could not place, and raising
+         * it on every export teaches the author to ignore it.
+         */
+        if (isDocumentMeta(text)) {
+          pendingUnmatched = null;
+          current = null;
+          currentKey = null;
+          continue;
+        }
+
         const key = classifyHeading(text);
         if (key === null) {
           pendingUnmatched = { heading: text, words: 0 };

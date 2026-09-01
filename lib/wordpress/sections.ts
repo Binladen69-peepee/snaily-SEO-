@@ -61,6 +61,26 @@ export function normaliseHeading(text: string): string {
  * mapping. Order matters: "how to make" is tested before the bare step check,
  * and the recipe-card heading last because "recipe" appears inside "Recipe FAQs".
  */
+/**
+ * Headings the document carries for the author, which the export consumes as
+ * fields rather than as page content.
+ *
+ * The Yoast block prints the meta description, slug, focus keyphrase and
+ * categories so a writer can check them in the document before anything
+ * ships. Those values reach WordPress through the Yoast fields and the
+ * category assignment — putting them in the post body as well would publish
+ * the SEO worksheet to readers.
+ *
+ * It is not "unmatched" either: an unmatched heading means the exporter found
+ * content it could not place, which is a real warning, and flagging every
+ * export with one would teach the author to ignore that warning.
+ */
+export function isDocumentMeta(raw: string): boolean {
+  const t = normaliseHeading(raw);
+  if (t === "") return false;
+  return /\byoast\b/.test(t) || t === "seo" || t === "seo block";
+}
+
 export function classifyHeading(raw: string): SectionKey | null {
   const t = normaliseHeading(raw);
   if (t === "") return null;
