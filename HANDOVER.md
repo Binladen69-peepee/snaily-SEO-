@@ -214,6 +214,31 @@ Fixing it means teaching the connector to leave block delimiters alone, which
 is a plugin version bump and a reinstall on the client's site. Until then,
 check the FAQ section of any exported draft before publishing.
 
+## The Groq free tier is the ceiling on everything
+
+Measured from the API, not guessed:
+
+```
+tokens per minute      8,000     (every model on this account)
+tokens per day       200,000
+requests per day       1,000
+```
+
+One full article generation spends about **109,000 tokens**, of which 86% is
+prompt rather than writing. Two consequences follow, and no amount of code
+changes either:
+
+- **A generation cannot finish much faster than ~13 minutes.** 109,000 tokens
+  at 8,000 a minute is the floor before a single line of this app runs.
+- **The free tier is one and a half articles a day.** The second one stops
+  partway with `tokens per day (TPD): Limit 200000`.
+
+`scripts/job-timing.mjs` prints the token and time breakdown for any job, and
+an "Allowance floor" line that says what that job could not have beaten.
+
+Upgrading the Groq tier is the only lever that moves either number. Everything
+else is a matter of not wasting what the tier gives.
+
 ## Open items
 
 - **No git remote.** See "Backing this up" above — the bundle is a stopgap, not

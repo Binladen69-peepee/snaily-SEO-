@@ -54,7 +54,7 @@ const WINDOW_MS = 60_000;
  * character-count approximation, so spending to the last token means
  * discovering the difference as a 429.
  */
-const SAFETY = 0.9;
+const SAFETY = 0.92;
 
 export type TokenWindowState = {
   /** When `tokens` was last brought up to date. */

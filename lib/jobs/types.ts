@@ -241,6 +241,17 @@ export type JobState = {
    * two, spending 26,089 prompt tokens to add about ninety words.
    */
   expandedSections?: string[];
+
+  /**
+   * Why the job is not doing anything at this instant.
+   *
+   * Without it the UI shows a stage name and a spinner for minutes at a time
+   * and looks hung, when what is actually happening is a token allowance
+   * refilling on a schedule nobody can see. A reader who is told "waiting for
+   * the AI allowance, about 40s" is looking at the same delay and a different
+   * experience.
+   */
+  wait?: { untilMs: number; reason: "rate_limit" | "daily_allowance" | "retry" };
   /** The author's recipe paste, split. Parsed, never generated. */
   parsed?: ParsedRecipe;
   /**
@@ -300,4 +311,33 @@ export type JobView = {
   words: { target: number; actual: number } | null;
   startedAt: string | null;
   finishedAt: string | null;
+  /** What the job is doing right now, for a UI that would otherwise say nothing. */
+  activity: JobActivity;
+  /** Seconds left on a rate-limit wait, when that is what is happening. */
+  waitSeconds: number | null;
+  metrics: JobMetrics;
+};
+
+/** Plain-language state, so a progress bar can say why it is not moving. */
+export type JobActivity =
+  | "queued"
+  | "generating"
+  | "waiting_rate_limit"
+  | "waiting_daily_allowance"
+  | "retrying"
+  | "done"
+  | "failed";
+
+export type JobMetrics = {
+  aiCalls: number;
+  promptTokens: number;
+  completionTokens: number;
+  /** Time stages spent actually working, in ms. */
+  workMs: number;
+  /** Wall clock minus work — almost all of it allowance refill. */
+  waitMs: number;
+  totalMs: number;
+  /** Stage attempts beyond the first. */
+  retries: number;
+  perStage: { name: string; ms: number; promptTokens: number; completionTokens: number }[];
 };

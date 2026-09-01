@@ -877,7 +877,14 @@ try {
   const t0 = 1_000_000;
   let win = new TokenWindow({ startedAt: null, tokens: 0 }, t0);
 
-  check(win.remaining(t0) === 7_200, "a fresh minute has 90% of the budget to spend");
+  /*
+   * Derived, not hard-coded: the budget tracks what the provider says it
+   * allows, and a test that pins the number fails every time that is corrected
+   * without anything actually being wrong.
+   */
+  const CAP = win.capacity();
+  const perMs = CAP / 60_000;
+  check(CAP > 0 && win.remaining(t0) === CAP, "a fresh minute has the whole budget to spend");
   check(win.roomFor(3_000, t0), "a call that fits is allowed");
 
   win.record(3_000, t0);
@@ -896,12 +903,12 @@ try {
    * sixteen-stage run paused 237 times to make 23 calls.
    */
   check(
-    win.waitFor(3_000, t0 + 6_000) === 9_000,
+    win.waitFor(3_000, t0 + 6_000) === Math.ceil((3_000 - win.remaining(t0 + 6_000)) / perMs),
     "the wait is the time to afford this call, not the rest of the minute",
     `${String(win.waitFor(3_000, t0 + 6_000))}ms`,
   );
   check(
-    win.resetInMs(t0 + 6_000) === 44_000,
+    win.resetInMs(t0 + 6_000) === Math.ceil((CAP - win.remaining(t0 + 6_000)) / perMs),
     "and a full refill is still reported for callers that want it",
     `${String(win.resetInMs(t0 + 6_000))}ms`,
   );
@@ -912,10 +919,10 @@ try {
 
   /* Spend is returned as it refills, rather than in one lump at the end. */
   const drip = new TokenWindow({ startedAt: null, tokens: 0 }, t0);
-  drip.record(7_200, t0);
+  drip.record(CAP, t0);
   check(drip.remaining(t0) === 0, "spending the lot leaves nothing");
   check(
-    Math.round(drip.remaining(t0 + 30_000)) === 3_600,
+    Math.round(drip.remaining(t0 + 30_000)) === Math.round(CAP / 2),
     "half a minute later, half of it is back",
     String(Math.round(drip.remaining(t0 + 30_000))),
   );
@@ -929,13 +936,47 @@ try {
   booked.record(4_300, t0);
   booked.reconcile(4_300, 3_231, t0);
   check(
-    Math.round(booked.remaining(t0)) === 7_200 - 3_231,
+    Math.round(booked.remaining(t0)) === CAP - 3_231,
     "an over-reserved call gives back what it did not use",
     String(Math.round(booked.remaining(t0))),
   );
   check(
-    booked.remaining(t0) <= 7_200,
+    booked.remaining(t0) <= CAP,
     "  and reconciling can never create allowance out of nothing",
+  );
+
+  /*
+   * A call that never reached the provider spent nothing.
+   *
+   * Spend is booked before the request, because a worker killed mid-call still
+   * spent those tokens. But a refused or aborted call spent none, and the
+   * booking used to outlive it — a section call left 6,453 tokens on the books
+   * permanently, so the next attempt waited for an allowance that was already
+   * gone. A stage was measured sitting seven minutes without making one call.
+   */
+  const aborted = new TokenWindow({ startedAt: null, tokens: 0 }, t0);
+  aborted.record(6_453, t0);
+  check(
+    Math.round(aborted.remaining(t0)) === CAP - 6_453,
+    "a booked call holds its reservation while it is in flight",
+  );
+  aborted.reconcile(6_453, 0, t0);
+  check(
+    Math.round(aborted.remaining(t0)) === CAP,
+    "and gives all of it back when the call never happened",
+    String(Math.round(aborted.remaining(t0))),
+  );
+
+  const ctxSrc = readFileSync("lib/jobs/context.ts", "utf8");
+  check(
+    /if \(!\(err instanceof AiRateLimit\)\) \{[\s\S]{0,120}reconcile\(estimate, 0\)/.test(
+      ctxSrc,
+    ),
+    "the AI wrapper releases a reservation when the call throws",
+  );
+  check(
+    /LIKELY_OUTPUT_SHARE/.test(ctxSrc),
+    "and books the likely reply rather than the longest permitted one",
   );
 
   check(
@@ -943,7 +984,7 @@ try {
     "the allowance returns when the minute rolls over",
   );
   check(
-    win.remaining(t0 + 61_000) === 7_200,
+    win.remaining(t0 + 61_000) === CAP,
     "and the window resets to a full budget",
   );
 
@@ -969,7 +1010,7 @@ try {
     t0 + 120_000,
   );
   check(
-    stale.remaining(t0 + 120_000) === 7_200,
+    stale.remaining(t0 + 120_000) === CAP,
     "a window from two minutes ago is not held against the current one",
   );
 } finally {

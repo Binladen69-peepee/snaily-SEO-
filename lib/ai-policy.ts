@@ -24,12 +24,17 @@ function num(name: string, fallback: number): number {
 /**
  * Tokens a single request may spend, prompt plus completion.
  *
- * Groq meters this per minute and per model: the retired llama-3.3-70b allowed
- * 12,000, gpt-oss-120b allows 8,000. The staged pipeline stays well under it
- * on purpose so two stages can run inside the same minute.
+ * Groq meters this per minute, and every model on this account reports the
+ * same ceiling: `x-ratelimit-limit-tokens: 8000`, checked against gpt-oss-120b
+ * and both Qwen builds. 7,600 was a guess made before anyone read that header
+ * and it cost 5% of the only resource the pipeline is actually short of.
+ *
+ * The remaining margin is real and stays: our prompt estimate counts
+ * characters and divides by four, which runs under the provider's own count,
+ * and spending to the last token means meeting the difference as a 429.
  */
 export function tpmBudget(): number {
-  return num("AI_TPM_BUDGET", 7_600);
+  return num("AI_TPM_BUDGET", 8_000);
 }
 
 /** Ceiling on any single completion, before the prompt is subtracted. */

@@ -150,6 +150,15 @@ const CALL_ALLOWANCE_MS = 22_000;
  * question is not "is this wait short" but "does this wait, and the call after
  * it, still fit" — which is a deadline, not a constant.
  */
+/**
+ * How much of a permitted completion a reply actually turns out to be.
+ *
+ * Measured across a full run: section calls permitted 1,000-1,200 tokens and
+ * wrote 350-450, the outline permitted 2,000 and wrote 454. 0.7 is well above
+ * anything observed and still books a quarter less than the ceiling.
+ */
+const LIKELY_OUTPUT_SHARE = 0.7;
+
 function canWaitInline(waitMs: number, deadline: number): boolean {
   return Date.now() + waitMs + CALL_ALLOWANCE_MS < deadline;
 }
@@ -186,8 +195,28 @@ export function makeAi(
      * conservative side to be wrong on — the alternative is a 429 that costs
      * the stage a retry and produces nothing.
      */
+    /*
+     * Reserve what the reply is likely to be, not the longest it may be.
+     *
+     * Admission is the slow part of a generation: a call is not made until the
+     * whole reservation fits, and the allowance refills at a fixed rate, so an
+     * over-reservation is paid for in seconds of waiting. Measured on this
+     * pipeline, section calls ask for 1,000-1,200 completion tokens and write
+     * 350-450; the outline reserved 2,818 and spent 2,337.
+     *
+     * Booking the ceiling made every call demand about a quarter more headroom
+     * than it used, and at 7,360 tokens a minute that quarter is real time.
+     *
+     * Under-booking is safe here in a way it was not before: the reservation
+     * is reconciled against the provider's own usage figures the moment the
+     * call returns, so an unusually long reply is corrected within the same
+     * second rather than being discovered a minute later, and the safety
+     * margin held back from the stated limit absorbs the difference.
+     */
     const estimate =
-      estimateTokens(req.system) + estimateTokens(req.user) + maxTokens;
+      estimateTokens(req.system) +
+      estimateTokens(req.user) +
+      Math.ceil(maxTokens * LIKELY_OUTPUT_SHARE);
 
     if (!ctx.window.roomFor(estimate)) {
       /*
@@ -221,6 +250,20 @@ export function makeAi(
     await ctx.onSpend(estimate);
 
     let result: AiCompletion;
+    /*
+     * Give the reservation back if the call did not happen.
+     *
+     * Spend is booked before the request, because a worker killed mid-call
+     * still spent those tokens. But a call that never reached the provider
+     * spent nothing, and the booking outlived it: a refused or aborted section
+     * call left 6,453 tokens on the books permanently, so the next attempt
+     * waited for an allowance that was already gone and the job fell further
+     * behind on every cycle. A stage was measured sitting for seven minutes
+     * without making a single call because of it.
+     *
+     * Released in the catch below unless the call returned, in which case the
+     * reconciliation replaces the reservation with what was really used.
+     */
     try {
       result = await completeDetailed({
         system: req.system,
@@ -245,6 +288,16 @@ export function makeAi(
        * signal and the runner keeps the work, keeps the retries, and continues
        * when the allowance returns.
        */
+      /*
+       * Nothing was written, so nothing was spent. The one exception is a rate
+       * limit, where the provider counted the request against the allowance
+       * even though it produced no reply — that is left on the books.
+       */
+      if (!(err instanceof AiRateLimit)) {
+        ctx.window.reconcile(estimate, 0);
+        await ctx.onSpend(0);
+      }
+
       if (err instanceof AiRateLimit && err.daily && err.retryAfterMs > 0) {
         throw new TokenWindowExhausted(
           Math.min(err.retryAfterMs + 5_000, DAILY_QUOTA_HOP_MS),
@@ -291,6 +344,15 @@ export function makeAi(
       model: result.model,
       inputTokens: result.usage.input,
       outputTokens: result.usage.output,
+      /*
+       * Split so the prompt can be argued about with numbers. The pipeline is
+       * limited by tokens per minute and 86% of what it spends is prompt, so
+       * "which half of this call is instructions" is the only question that
+       * moves the total.
+       */
+      systemTokens: estimateTokens(req.system),
+      userTokens: estimateTokens(req.user),
+      reservedTokens: estimate,
       durationMs: result.durationMs,
     });
 

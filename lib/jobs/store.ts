@@ -23,6 +23,8 @@ import {
   type StageName,
   type StageStatus,
   type StageView,
+  type JobActivity,
+  type JobMetrics,
 } from "@/lib/jobs/types";
 
 /** How long a claim is good for. Long enough to outlive one invocation. */
@@ -200,6 +202,33 @@ export async function claimJob(
   workerId: string,
 ): Promise<JobRecord | null> {
   const now = new Date();
+
+  /*
+   * One article at a time, across the whole account.
+   *
+   * The lease below stops two workers taking the same job. It does nothing
+   * about two different jobs, and the thing they contend for is not the job
+   * row — it is Groq's token allowance, which is billed per account and not
+   * per article. Two generations running together each believed they had a
+   * full allowance, spent twice it, and both collected 429s; three at once was
+   * measured doing exactly that.
+   *
+   * So a job whose turn it is not waits. It loses nothing by waiting: the
+   * tokens it would have spent were not available to it anyway, and the
+   * allowance it is queuing behind is refilling the whole time. A holder that
+   * dies releases its lease on expiry, so this cannot deadlock.
+   */
+  const busy = await prisma.draftJob.findFirst({
+    where: {
+      id: { not: jobId },
+      status: "running",
+      leaseExpiresAt: { gt: now },
+      workerId: { not: workerId },
+    },
+    select: { id: true },
+  });
+  if (busy !== null) return null;
+
   const claimed = await prisma.draftJob.updateMany({
     where: {
       id: jobId,
@@ -337,6 +366,10 @@ export type StageRecord = {
   errorCode: string | null;
   errorMessage: string | null;
   durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  provider: string;
+  model: string;
 };
 
 const STAGE_SELECT = {
@@ -349,6 +382,11 @@ const STAGE_SELECT = {
   errorCode: true,
   errorMessage: true,
   durationMs: true,
+  // Read for the timing report: what each stage cost, and on which model.
+  inputTokens: true,
+  outputTokens: true,
+  provider: true,
+  model: true,
 } as const;
 
 export async function loadStages(jobId: string): Promise<StageRecord[]> {
@@ -611,7 +649,58 @@ export function toJobView(
 
   const failed = views.find((s) => s.status === "failed");
 
+  /*
+   * What is happening, in words, and how long it has left.
+   *
+   * A stage name and a spinner are indistinguishable from a hang when a stage
+   * sits for forty seconds waiting on a token allowance — which is most of a
+   * generation. The wait is recorded when the runner yields for it, so this
+   * can say which of the two it is.
+   */
+  const wait = job.state.wait;
+  const waitLeftMs = wait === undefined ? 0 : wait.untilMs - Date.now();
+  const waiting = waitLeftMs > 0;
+
+  const activity: JobActivity =
+    job.status === "completed"
+      ? "done"
+      : job.status === "failed" || job.status === "cancelled"
+        ? "failed"
+        : job.status === "queued"
+          ? "queued"
+          : waiting && wait?.reason === "daily_allowance"
+            ? "waiting_daily_allowance"
+            : waiting && wait?.reason === "rate_limit"
+              ? "waiting_rate_limit"
+              : waiting && wait?.reason === "retry"
+                ? "retrying"
+                : "generating";
+
+  const started = job.startedAt?.getTime() ?? null;
+  const ended = job.finishedAt?.getTime() ?? Date.now();
+  const workMs = stages.reduce((n, s) => n + s.durationMs, 0);
+  const totalMs = started === null ? 0 : Math.max(0, ended - started);
+
+  const metrics: JobMetrics = {
+    aiCalls: stages.filter((s) => s.model !== "").length,
+    promptTokens: stages.reduce((n, s) => n + s.inputTokens, 0),
+    completionTokens: stages.reduce((n, s) => n + s.outputTokens, 0),
+    workMs,
+    waitMs: Math.max(0, totalMs - workMs),
+    totalMs,
+    retries: stages.reduce((n, s) => n + Math.max(0, s.attempt - 1), 0),
+    perStage: stages.map((s) => ({
+      name: s.name,
+      ms: s.durationMs,
+      promptTokens: s.inputTokens,
+      completionTokens: s.outputTokens,
+    })),
+  };
+
   return {
+    activity,
+    waitSeconds: waiting ? Math.ceil(waitLeftMs / 1000) : null,
+    metrics,
     id: job.id,
     articleId: job.articleId,
     status: job.status,

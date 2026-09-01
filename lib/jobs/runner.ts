@@ -245,6 +245,9 @@ export async function runJob(
       outOfTime: makeOutOfTime(deadline),
     };
 
+    // Anything that starts working is no longer waiting.
+    state.wait = undefined;
+
     const stageStart = Date.now();
 
     try {
@@ -297,6 +300,17 @@ export async function runJob(
        * one, which used to fail the job outright and throw the run away.
        */
       if (err instanceof TokenWindowExhausted) {
+        /*
+         * Record what the job is waiting for and until when.
+         *
+         * This is the difference between a progress bar that looks broken and
+         * one that says "waiting for the AI allowance, about 40s". The wait is
+         * real and unavoidable; being unable to see it is not.
+         */
+        state.wait = {
+          untilMs: Date.now() + err.resumeInMs,
+          reason: err.allowance === "daily" ? "daily_allowance" : "rate_limit",
+        };
         await saveState(jobId, workerId, state);
         // Worded for the author, not the operator. What they need to know is
         // that nothing is broken; the token arithmetic behind it belongs in the
@@ -361,7 +375,10 @@ export async function runJob(
 
         // Wait it out here when there is room, then re-run the same stage.
         if (wait < remaining - 5_000) {
+          state.wait = { untilMs: Date.now() + wait, reason: "retry" };
+          await saveState(jobId, workerId, state);
           await new Promise((r) => setTimeout(r, wait));
+          state.wait = undefined;
           i -= 1;
           continue;
         }

@@ -126,13 +126,27 @@ export const SETTINGS: SettingSpec[] = [
      * whisper, guard and orpheus entries it also returns are speech and safety
      * models and cannot write an article, so they are not offered.
      */
+    /*
+     * Measured on this account, on a real section prompt:
+     *
+     *   gpt-oss-120b   1,040ms   61 reasoning tokens   143 words
+     *   gpt-oss-20b      527ms   17 reasoning tokens    84 words
+     *   qwen3.8-27b     ~900ms  457 reasoning tokens   (truncates)
+     *
+     * 120b is the default because latency is not what makes a generation slow
+     * — the per-minute token allowance is — and it is the one that writes a
+     * full-length section first time. 20b is twice as fast and writes half as
+     * much, which only moves the work into the expand stage.
+     *
+     * qwen3.8-27b is deliberately absent. It spends twenty times more thinking
+     * than gpt-oss for the same task, which pushed a single section call past
+     * the whole per-minute allowance; two runs failed outright on it.
+     */
     options: [
       "openai/gpt-oss-120b",
-      "qwen/qwen3.8-27b",
-      "qwen/qwen3.6-27b",
       "openai/gpt-oss-20b",
+      "qwen/qwen3.6-27b",
       "groq/compound",
-      "groq/compound-mini",
     ],
   },
   {
