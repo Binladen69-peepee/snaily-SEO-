@@ -10,6 +10,7 @@
  */
 
 import {
+  aiModel,
   AiError,
   AiRateLimit,
   completeDetailed,
@@ -137,8 +138,24 @@ export type StageContext = {
 /** Longest a single model call has ever taken here, plus margin. */
 const CALL_ALLOWANCE_MS = 22_000;
 
+/**
+ * Whether to serve a token-allowance wait here or hand the job back.
+ *
+ * Yielding does not shorten the wait by a millisecond. It ends the invocation,
+ * and the work then sits until something polls it awake — so handing back a
+ * ten-second wait costs ten seconds plus the poll gap plus a fresh claim.
+ *
+ * The only reason to yield is having no time left to wait in: the invocation
+ * has 45 seconds and must keep enough back for the call itself. So the
+ * question is not "is this wait short" but "does this wait, and the call after
+ * it, still fit" — which is a deadline, not a constant.
+ */
+function canWaitInline(waitMs: number, deadline: number): boolean {
+  return Date.now() + waitMs + CALL_ALLOWANCE_MS < deadline;
+}
+
 export function makeAi(
-  ctx: Pick<StageContext, "stage" | "cost" | "log"> & {
+  ctx: Pick<StageContext, "stage" | "cost" | "log" | "deadline"> & {
     attempt: number;
     window: TokenWindow;
     onSpend: (tokens: number) => Promise<void>;
@@ -158,7 +175,7 @@ export function makeAi(
     const maxTokens = fitMaxTokens(
       req.system,
       req.user,
-      req.maxTokens + reasoningReserve() * Math.max(1, ctx.attempt),
+      req.maxTokens + reasoningReserve(aiModel()) * Math.max(1, ctx.attempt),
     );
     if (maxTokens === 0) throw new PromptTooLarge(ctx.stage);
 
@@ -173,14 +190,31 @@ export function makeAi(
       estimateTokens(req.system) + estimateTokens(req.user) + maxTokens;
 
     if (!ctx.window.roomFor(estimate)) {
-      const resumeInMs = ctx.window.resetInMs();
-      ctx.log("tpm_pause", {
-        stage: ctx.stage,
-        needed: estimate,
-        remaining: ctx.window.remaining(),
-        resumeInMs,
-      });
-      throw new TokenWindowExhausted(resumeInMs);
+      /*
+       * Wait for what this call needs, not for a whole fresh minute.
+       *
+       * The allowance refills continuously, so a call that is a few hundred
+       * tokens short is usually a second or two away. Ending the invocation
+       * for that costs far more than the wait: the job then sits until an
+       * external poll starts it again. A short wait is served here; only a
+       * long one is worth handing back.
+       */
+      const resumeInMs = ctx.window.waitFor(estimate);
+
+      if (resumeInMs > 0 && canWaitInline(resumeInMs, ctx.deadline)) {
+        ctx.log("tpm_wait", { stage: ctx.stage, needed: estimate, waitMs: resumeInMs });
+        await new Promise((r) => setTimeout(r, resumeInMs));
+      }
+
+      if (!ctx.window.roomFor(estimate)) {
+        ctx.log("tpm_pause", {
+          stage: ctx.stage,
+          needed: estimate,
+          remaining: ctx.window.remaining(),
+          resumeInMs,
+        });
+        throw new TokenWindowExhausted(resumeInMs);
+      }
     }
 
     ctx.window.record(estimate);
@@ -225,6 +259,18 @@ export function makeAi(
       }
       throw err;
     }
+
+    /*
+     * Give back what the reply did not use.
+     *
+     * The reservation above assumes the model writes to the very last
+     * permitted token, which it almost never does. Keeping the difference on
+     * the books made every later call in the run look unaffordable.
+     */
+    if (result.usage.measured) {
+      ctx.window.reconcile(estimate, result.usage.input + result.usage.output);
+    }
+
 
     ctx.cost.aiCalls += 1;
     ctx.cost.inputTokens += result.usage.input;

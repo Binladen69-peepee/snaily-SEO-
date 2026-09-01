@@ -232,6 +232,15 @@ export type JobState = {
   words?: { target: number; actual: number };
   /** Set when the expansion stage has already had its go at a thin draft. */
   expanded?: boolean;
+  /**
+   * Sections expand has already tried, so a resumed run does not redo them.
+   *
+   * `expanded` is only set once the whole loop finishes, and the loop yields
+   * partway when the invocation runs out of time. Without this, every resume
+   * started over: a measured run made nine expansion calls for a job capped at
+   * two, spending 26,089 prompt tokens to add about ninety words.
+   */
+  expandedSections?: string[];
   /** The author's recipe paste, split. Parsed, never generated. */
   parsed?: ParsedRecipe;
   /**

@@ -226,6 +226,7 @@ export async function runJob(
         cost,
         log,
         attempt: begun.attempt,
+        deadline,
         window,
         /*
          * Spend is persisted before the call, not after. A function killed

@@ -72,3 +72,5 @@ poll-tmp.mjs
 .devserver.log
 .e2e.log
 .resume.log
+
+.run*.log

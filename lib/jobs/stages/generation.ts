@@ -1013,8 +1013,19 @@ export async function expand(ctx: StageContext): Promise<StageResult> {
     };
   }
 
+  /*
+   * Sections a previous invocation already worked on.
+   *
+   * This loop yields when it runs out of time and `expanded` is only set after
+   * it finishes, so a resumed stage used to recompute the whole list and
+   * rewrite what it had already rewritten. Each redo pays the full prompt cost
+   * and is then usually discarded by the "must be longer" guard below.
+   */
+  const alreadyTried = new Set(state.expandedSections ?? []);
+
   const thin = plan.sections
     .filter((s) => s.key !== "faq" && s.key !== "steps" && (written[s.key] ?? "") !== "")
+    .filter((s) => !alreadyTried.has(s.key))
     .map((s) => ({ section: s, deficit: s.targetWords - wordsOf(written[s.key] ?? "") }))
     .filter((s) => s.deficit > 40)
     .sort((a, b) => b.deficit - a.deficit)
@@ -1049,6 +1060,13 @@ export async function expand(ctx: StageContext): Promise<StageResult> {
       "",
       clip(written[section.key] ?? "", 3_000),
     ].join("\n");
+
+    /*
+     * Booked before the call, not after. A section that was attempted is not
+     * attempted again even if the reply is rejected below — the same prompt
+     * will not produce a longer answer the second time.
+     */
+    state.expandedSections = [...alreadyTried.add(section.key)];
 
     const raw = await ctx.ai({ system, user, maxTokens: 900, temperature: 0.7 });
     /*

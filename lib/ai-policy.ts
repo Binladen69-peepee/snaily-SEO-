@@ -47,11 +47,31 @@ export function retryLimit(): number {
  *
  * A reasoning model's hidden tokens come out of the same allowance as its
  * reply, so asking for exactly the length wanted produces exactly that length
- * minus the thinking. Measured at 31 tokens on low effort and 256 on the
- * provider default; the reserve covers both.
+ * minus the thinking.
+ *
+ * How much thinking varies enormously between models, and 300 was measured on
+ * gpt-oss-120b — 31 tokens at low effort, 256 at the provider default. Handed
+ * the identical section prompt at the same low effort, qwen3.8-27b spent 457.
+ * A reserve smaller than the thinking is not a slow call, it is a truncated
+ * one: the reply is cut off, the stage retries, and the retry re-sends the
+ * whole prompt. On a fixed per-minute allowance that turns one call into
+ * three, which is why this is sized per model rather than once.
  */
-export function reasoningReserve(): number {
-  return num("AI_REASONING_RESERVE", 300);
+const RESERVE_BY_MODEL: { pattern: RegExp; reserve: number }[] = [
+  // Measured: 457 reasoning tokens on a section prompt at low effort.
+  { pattern: /qwen3/i, reserve: 700 },
+  // Measured: 22 at low effort, 256 at the provider default.
+  { pattern: /gpt-oss/i, reserve: 300 },
+];
+
+export function reasoningReserve(model = ""): number {
+  const configured = Number(process.env.AI_REASONING_RESERVE ?? "");
+  if (Number.isFinite(configured) && configured > 0) return configured;
+
+  for (const { pattern, reserve } of RESERVE_BY_MODEL) {
+    if (pattern.test(model)) return reserve;
+  }
+  return 300;
 }
 
 /** Wall clock a single stage may occupy before it is abandoned. */

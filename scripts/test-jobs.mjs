@@ -886,9 +886,56 @@ try {
     !win.roomFor(3_000, t0 + 6_000),
     "a call that would break the limit is refused before it is made",
   );
+  /*
+   * The allowance refills continuously, so the wait is the time to afford
+   * this call — not the time to the end of some minute.
+   *
+   * Groq's own headers say so: `x-ratelimit-reset-tokens` comes back at
+   * 157ms on a nearly-full bucket. Treating the refill as a step function
+   * charged 54 seconds for a call that is nine seconds of refill away, and a
+   * sixteen-stage run paused 237 times to make 23 calls.
+   */
   check(
-    win.resetInMs(t0 + 6_000) === 54_000,
-    "and the caller is told exactly how long to wait",
+    win.waitFor(3_000, t0 + 6_000) === 9_000,
+    "the wait is the time to afford this call, not the rest of the minute",
+    `${String(win.waitFor(3_000, t0 + 6_000))}ms`,
+  );
+  check(
+    win.resetInMs(t0 + 6_000) === 44_000,
+    "and a full refill is still reported for callers that want it",
+    `${String(win.resetInMs(t0 + 6_000))}ms`,
+  );
+  check(
+    win.waitFor(500, t0 + 6_000) === 0,
+    "a call that already fits waits not at all",
+  );
+
+  /* Spend is returned as it refills, rather than in one lump at the end. */
+  const drip = new TokenWindow({ startedAt: null, tokens: 0 }, t0);
+  drip.record(7_200, t0);
+  check(drip.remaining(t0) === 0, "spending the lot leaves nothing");
+  check(
+    Math.round(drip.remaining(t0 + 30_000)) === 3_600,
+    "half a minute later, half of it is back",
+    String(Math.round(drip.remaining(t0 + 30_000))),
+  );
+
+  /*
+   * A reservation is prompt plus the longest permitted reply; the reply is
+   * almost never that long. A measured outline reserved ~4,300 and spent
+   * 3,231, and the difference used to stay on the books for the whole run.
+   */
+  const booked = new TokenWindow({ startedAt: null, tokens: 0 }, t0);
+  booked.record(4_300, t0);
+  booked.reconcile(4_300, 3_231, t0);
+  check(
+    Math.round(booked.remaining(t0)) === 7_200 - 3_231,
+    "an over-reserved call gives back what it did not use",
+    String(Math.round(booked.remaining(t0))),
+  );
+  check(
+    booked.remaining(t0) <= 7_200,
+    "  and reconciling can never create allowance out of nothing",
   );
 
   check(
