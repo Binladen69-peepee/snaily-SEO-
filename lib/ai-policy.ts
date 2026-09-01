@@ -9,8 +9,28 @@
  * belongs to the model and models get retired.
  */
 
-/** Characters per token, near enough for budgeting English prose. */
-const CHARS_PER_TOKEN = 4;
+/**
+ * Characters per token.
+ *
+ * Four is the usual rule of thumb for English prose and it is wrong for these
+ * prompts. Measured against the provider's own count on this pipeline: the
+ * outline's prompt estimated 1,818 and was charged 1,883 (3% under), but a
+ * section prompt estimated 3,721 and was charged 5,462 — 47% under. The
+ * difference is what the prompt is made of. A section brief is markdown,
+ * headings, emoji, bulleted rules and code-ish structure, none of which
+ * tokenises anywhere near four characters each.
+ *
+ * Under-estimating is not a rounding error here, it is a debt spiral: the call
+ * is admitted against a booking smaller than it costs, the reconciliation puts
+ * the real figure on the books, and the allowance goes further into deficit
+ * with every call until nothing fits. A stage was measured making two calls in
+ * seven minutes that way.
+ *
+ * Three is deliberately pessimistic for prose and about right for the prompts
+ * that actually dominate the run. Over-booking costs a little admission
+ * latency and is corrected the instant the call returns.
+ */
+const CHARS_PER_TOKEN = 3;
 
 /** Overhead the provider adds per message beyond the text itself. */
 const MESSAGE_OVERHEAD_TOKENS = 24;

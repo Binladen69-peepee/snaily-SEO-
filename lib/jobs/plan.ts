@@ -81,14 +81,35 @@ export function planGroups(
     }
   }
 
-  if (has("serving")) {
-    groups.push({ id: "serving", keys: ["serving"], maxTokens: 900 });
+  /*
+   * The three short closing sections share one call.
+   *
+   * Every call carries the same fixed freight before it writes a word: the
+   * house style guide (646 tokens), the grounding constraints (528), the
+   * recipe and research context (~1,200) and the task framing. Measured, that
+   * is about 2,950 tokens paid per call regardless of how much is written —
+   * and serving, tips and related together only produce about 500 words.
+   * Writing them separately paid that freight three times to save nothing.
+   *
+   * Their three writers total roughly 1,400 tokens, so the merged prompt lands
+   * near 4,400 against a 7,360 ceiling — comfortably inside it, where merging
+   * the intro with "why" was not. That distinction is the whole reason those
+   * two remain separate above.
+   */
+  const tail: SectionKey[] = [
+    ...(has("serving") ? (["serving"] as SectionKey[]) : []),
+    ...(has("tips") ? (["tips"] as SectionKey[]) : []),
+    ...(has("related") ? (["related"] as SectionKey[]) : []),
+  ];
+  if (tail.length > 0) {
+    groups.push({
+      id: "closing",
+      keys: tail,
+      // The sum of what the three asked for alone, so none is written shorter.
+      maxTokens:
+        (has("serving") ? 900 : 0) + (has("tips") ? 700 : 0) + (has("related") ? 400 : 0),
+    });
   }
-  if (has("tips")) {
-    groups.push({ id: "tips", keys: ["tips"], maxTokens: 700 });
-  }
-
-  if (has("related")) groups.push({ id: "related", keys: ["related"], maxTokens: 400 });
 
   return groups;
 }

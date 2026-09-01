@@ -150,15 +150,6 @@ const CALL_ALLOWANCE_MS = 22_000;
  * question is not "is this wait short" but "does this wait, and the call after
  * it, still fit" — which is a deadline, not a constant.
  */
-/**
- * How much of a permitted completion a reply actually turns out to be.
- *
- * Measured across a full run: section calls permitted 1,000-1,200 tokens and
- * wrote 350-450, the outline permitted 2,000 and wrote 454. 0.7 is well above
- * anything observed and still books a quarter less than the ceiling.
- */
-const LIKELY_OUTPUT_SHARE = 0.7;
-
 function canWaitInline(waitMs: number, deadline: number): boolean {
   return Date.now() + waitMs + CALL_ALLOWANCE_MS < deadline;
 }
@@ -207,16 +198,15 @@ export function makeAi(
      * Booking the ceiling made every call demand about a quarter more headroom
      * than it used, and at 7,360 tokens a minute that quarter is real time.
      *
-     * Under-booking is safe here in a way it was not before: the reservation
-     * is reconciled against the provider's own usage figures the moment the
-     * call returns, so an unusually long reply is corrected within the same
-     * second rather than being discovered a minute later, and the safety
-     * margin held back from the stated limit absorbs the difference.
+     * The completion is still booked in full. Trimming it was tried and made
+     * things worse: paired with a prompt estimate that ran 47% under the
+     * provider's count, every call was admitted against a booking smaller than
+     * it cost and the allowance went further into deficit with each one. The
+     * reconciliation that follows the call returns whatever the reply did not
+     * use, within the same second, which is where that saving belongs.
      */
     const estimate =
-      estimateTokens(req.system) +
-      estimateTokens(req.user) +
-      Math.ceil(maxTokens * LIKELY_OUTPUT_SHARE);
+      estimateTokens(req.system) + estimateTokens(req.user) + maxTokens;
 
     if (!ctx.window.roomFor(estimate)) {
       /*
@@ -289,14 +279,20 @@ export function makeAi(
        * when the allowance returns.
        */
       /*
-       * Nothing was written, so nothing was spent. The one exception is a rate
-       * limit, where the provider counted the request against the allowance
-       * even though it produced no reply — that is left on the books.
+       * Nothing was written, so nothing was spent — including on a refusal.
+       *
+       * Holding the reservation through a rate limit was tried and is wrong.
+       * This window models the per-minute allowance, and a request the
+       * provider refused never reached the model, so no per-minute tokens went
+       * anywhere. Charging for it turned a real daily-cap refusal into phantom
+       * per-minute debt on top: the bucket sat at 215 tokens of 7,360 while the
+       * job waited on an allowance it had not actually spent, and every retry
+       * booked another few thousand it would never get back.
+       *
+       * Pacing after a refusal is the yield's job, not the bucket's.
        */
-      if (!(err instanceof AiRateLimit)) {
-        ctx.window.reconcile(estimate, 0);
-        await ctx.onSpend(0);
-      }
+      ctx.window.reconcile(estimate, 0);
+      await ctx.onSpend(0);
 
       if (err instanceof AiRateLimit && err.daily && err.retryAfterMs > 0) {
         throw new TokenWindowExhausted(

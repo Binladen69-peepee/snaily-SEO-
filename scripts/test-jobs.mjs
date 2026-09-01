@@ -222,10 +222,29 @@ try {
   ];
 
   const short = planGroups(allKeys, 4);
-  check(short.length === 7, "a short recipe plans seven calls");
+  /*
+   * Five: opening, why, ingredients+variations, steps, and the closing three.
+   *
+   * Serving, tips and related were three calls and are now one. Each call
+   * carries about 2,950 tokens of fixed freight — style guide, grounding
+   * rules, recipe and research context — before it writes anything, and those
+   * three sections together produce about 500 words. Paying the freight three
+   * times bought nothing.
+   */
+  check(short.length === 5, "a short recipe plans five calls");
   check(
-    short.every((g) => g.maxTokens <= 1_300),
-    "no single call asks for more than 1,300 tokens",
+    short.every((g) => g.maxTokens <= 2_000),
+    "no single call asks for more than 2,000 completion tokens",
+  );
+  const closing = short.find((g) => g.id === "closing");
+  check(
+    closing !== undefined &&
+      ["serving", "tips", "related"].every((k) => closing.keys.includes(k)),
+    "the three closing sections share one call",
+  );
+  check(
+    closing !== undefined && closing.maxTokens === 2_000,
+    "and it may write as much as the three asked for separately",
   );
   /*
    * The introduction and "why you'll adore" are written separately. Together
@@ -241,7 +260,7 @@ try {
   );
 
   const long = planGroups(allKeys, 14);
-  check(long.length === 8, "a fourteen-step method adds another call");
+  check(long.length === 6, "a fourteen-step method adds another call");
   const stepGroups = long.filter((g) => g.steps !== undefined);
   check(stepGroups.length === 2, "the method is split in two");
   check(
@@ -969,14 +988,27 @@ try {
 
   const ctxSrc = readFileSync("lib/jobs/context.ts", "utf8");
   check(
-    /if \(!\(err instanceof AiRateLimit\)\) \{[\s\S]{0,120}reconcile\(estimate, 0\)/.test(
-      ctxSrc,
-    ),
+    /\} catch \(err\) \{[\s\S]{0,2000}?ctx\.window\.reconcile\(estimate, 0\);/.test(ctxSrc),
     "the AI wrapper releases a reservation when the call throws",
   );
   check(
-    /LIKELY_OUTPUT_SHARE/.test(ctxSrc),
-    "and books the likely reply rather than the longest permitted one",
+    !/if \(!\(err instanceof AiRateLimit\)\)/.test(ctxSrc),
+    "  including a refusal, which never reached the model at all",
+  );
+  /*
+   * Measured against the provider's own count: a section prompt estimated at
+   * 3,721 was charged 5,462. Under-booking a call is a debt spiral, not a
+   * rounding error — it is admitted for less than it costs and the allowance
+   * falls further behind with every call.
+   */
+  check(
+    fitMaxTokens("x".repeat(3_000), "y".repeat(3_000), 1_000) <
+      fitMaxTokens("x".repeat(3_000), "y".repeat(3_000), 1_000, 0) + 1,
+    "the estimator is consulted before a completion size is granted",
+  );
+  check(
+    !/LIKELY_OUTPUT_SHARE/.test(ctxSrc),
+    "the completion is booked in full, and given back on reconciliation",
   );
 
   check(
