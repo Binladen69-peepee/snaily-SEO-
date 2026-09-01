@@ -35,6 +35,7 @@ import { briefFor } from "@/lib/drafter/voice";
 import type { WriterKey } from "@/lib/drafter/voice/types";
 import { formatIngredients, formatSteps } from "@/lib/drafter/recipe-paste";
 import { parseRecipe } from "@/lib/drafter/recipe";
+import { deriveCardFields } from "@/lib/drafter/card-fields";
 import { buildArticleDocument } from "@/lib/drafter/document";
 import {
   RECIPE_CARD_HEADING,
@@ -1081,11 +1082,32 @@ export async function save(ctx: StageContext): Promise<StageResult> {
    * no published post is visibly absent here rather than silently missing from
    * a grid on the live page.
    */
+  /*
+   * Course and cuisine, derived now that the categories exist.
+   *
+   * The recipe stage already does this, and it runs fifth — five stages before
+   * metadata writes the categories it derives them from. So it read an empty
+   * list every time and every card this product exported went out with no
+   * course and no cuisine, which is exactly the fault that derivation was
+   * added to fix. Running it again here is the first moment the answer is
+   * knowable.
+   *
+   * deriveCardFields only fills blanks and never mutates its input, so a
+   * second run cannot overwrite what the author set. Times, yield and cost
+   * stay underived: those live in the author's paste or their head, and a cook
+   * time nobody stated is a false claim published as structured data.
+   */
+  const storedCard = parseRecipe(current.recipeCard);
+  const filledCard = deriveCardFields(storedCard, {
+    categories: merged.categories,
+    focusKeyword: article.keyword,
+  });
+
   const doc = buildArticleDocument({
     title,
     keyword: article.keyword,
     content: html,
-    recipeCard: current.recipeCard,
+    recipeCard: filledCard,
     editorial: merged,
   });
 
@@ -1112,6 +1134,7 @@ export async function save(ctx: StageContext): Promise<StageResult> {
       title,
       content: body,
       generated: body,
+      recipeCard: filledCard as object,
       editorial: merged,
       phase: "draft",
       status: "draft",

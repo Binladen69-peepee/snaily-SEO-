@@ -15,8 +15,14 @@ export const RELATED: SectionWriter = {
 
   structure: `
 One H2 starting with ✌️, phrased for this dish and this reader.
-Then 3-6 sibling recipes by name, one per line, no descriptions.
+Then 3-6 sibling recipes as a MARKDOWN BULLET LIST - one "- Recipe Name" per
+line, no descriptions.
 Nothing else. No paragraph, no sell, no closing thought.
+
+The bullets are not decoration. This section becomes a grid of image cards
+built from post IDs, and each name has to be its own list item for the export
+to tell one name from the next. Written as plain lines they merge into a
+single paragraph and the names run together.
 `.trim(),
 
   voice: `
@@ -44,6 +50,7 @@ built for this post rather than lifted from another one.
     "Does the heading name the category this dish actually belongs to?",
     "Are there 3-6 names and no descriptions?",
     "Is every name from the list I was given?",
+    "Is each name its own bullet, rather than a run of lines in one paragraph?",
     "Is there exactly one heading?",
   ],
 };

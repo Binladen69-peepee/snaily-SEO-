@@ -194,6 +194,26 @@ If you would rather purge it than revoke it, `git filter-repo --replace-text`
 over that one file works — but rewriting history invalidates the bundle above
 and any clone, so revoke first and treat rewriting as optional.
 
+## Known defect: the FAQ block ships escaped
+
+`wp_kses_post()` in the connector (plugin.ts, the two `post_content` writes)
+escapes Gutenberg block comments that carry JSON attributes containing curly
+quotes. The Yoast FAQ block is the one that trips it, because the questions
+contain apostrophes, so a draft can arrive with
+
+```
+&lt;!-- wp:yoast/faq-block {&quot;questions&quot;:[…
+```
+
+as visible text instead of an FAQ block. `populateTemplate` builds the block
+correctly — `npm run test:template` proves that — so the damage happens on the
+WordPress side, after the POST. The FSRI block survives because its attribute
+is short and plain.
+
+Fixing it means teaching the connector to leave block delimiters alone, which
+is a plugin version bump and a reinstall on the client's site. Until then,
+check the FAQ section of any exported draft before publishing.
+
 ## Open items
 
 - **No git remote.** See "Backing this up" above — the bundle is a stopgap, not

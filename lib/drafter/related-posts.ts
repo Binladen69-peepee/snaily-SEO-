@@ -26,6 +26,15 @@ import { classifyHeading } from "@/lib/wordpress/sections";
 /** The Feast grid renders four cards. */
 export const FSRI_CARDS = 4;
 
+/**
+ * Shortest title allowed to match on its text alone.
+ *
+ * A short title matches prose by accident — "Vegan Chili" appears inside half
+ * the sentences on a chili post. Anything shorter than this has to arrive as a
+ * link or a list item, where the author's intent is explicit.
+ */
+const MIN_TITLE_MATCH = 14;
+
 export type RelatedPost = {
   /** A real WordPress post ID, from a synced published post. */
   wpId: number;
@@ -86,6 +95,37 @@ export function resolveRelatedPosts(
     if (text === "") continue;
     const target = resolveTarget(index, "", text);
     if (target) found.set(target.wpId, target.title);
+  }
+
+  /*
+   * Last, any published title written out in full inside this section.
+   *
+   * The writer is asked for a bullet list and does not always produce one: a
+   * real draft put four correct recipe names into a single run-on paragraph,
+   * two of which the link pass happened to anchor. The other two were plain
+   * text with no delimiter between them, so there was no list item to read and
+   * no anchor to follow — and all four posts existed. Two cards were lost to
+   * markup rather than to anything being wrong with the names.
+   *
+   * Matching a full title inside this one section is not a guess about what
+   * the author meant: naming a recipe here is the entire purpose of the
+   * section. Long titles go first so "Vegan Chili" cannot claim a mention of
+   * "Easy Vegan Chili Recipe", and short titles are skipped entirely because a
+   * two-word title matches prose by accident.
+   */
+  if (found.size < FSRI_CARDS) {
+    const text = stripText(sectionHtml).toLowerCase();
+    const candidates = index.all
+      .filter((t) => t.type !== "category" && t.title.trim().length >= MIN_TITLE_MATCH)
+      .sort((a, b) => b.title.length - a.title.length);
+
+    for (const target of candidates) {
+      if (found.size >= FSRI_CARDS) break;
+      if (found.has(target.wpId)) continue;
+      if (text.includes(target.title.toLowerCase().trim())) {
+        found.set(target.wpId, target.title);
+      }
+    }
   }
 
   return [...found.entries()]

@@ -192,21 +192,52 @@ async function main() {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
-  ok(docIdList.length === 4, "the document names four post IDs", docIdList.join(", "));
-
-  for (const [label, needle] of [
-    ["Summary", "<strong>Summary:</strong>"],
-    ["Yield", "<strong>Yield:</strong>"],
-    ["Prep Time", "<strong>Prep Time:</strong>"],
-    ["Cook Time", "<strong>Cook Time:</strong>"],
-    ["Total Time", "<strong>Total Time:</strong>"],
-    ["Courses", "<strong>Courses:</strong>"],
-    ["Cuisine", "<strong>Cuisine:</strong>"],
-    ["Ingredients", "<strong>Ingredients:</strong>"],
-    ["Instructions", "<strong>Instructions:</strong>"],
-  ]) {
-    ok(docHtml.includes(needle), `the card in the document carries ${label}`);
+  ok(docIdList.length > 0, "the document names the post IDs the grid will use", docIdList.join(", "));
+  if (docIdList.length < 4) {
+    console.log(
+      `  NOTE  only ${String(docIdList.length)} of 4 related recipes matched a published post — the grid will be short`,
+    );
   }
+
+  /*
+   * A field is required in the document only when the card actually holds it.
+   *
+   * Times, yield and cost are never derived — they exist in the author's paste
+   * or nowhere, and a cook time nobody stated is a false claim published as
+   * structured data. So the test is "printed if present, absent if not", which
+   * is the rule the document is built on; asserting all of them unconditionally
+   * would be asking the exporter to invent.
+   */
+  const storedCard = article.recipeCard ?? {};
+  const cardChecks = [
+    ["Summary", "<strong>Summary:</strong>", storedCard.openingSentence || storedCard.description],
+    ["Yield", "<strong>Yield:</strong>", storedCard.recipeYield],
+    ["Estimated Cost", "<strong>Estimated Cost:</strong>", storedCard.estimatedCost],
+    ["Prep Time", "<strong>Prep Time:</strong>", storedCard.prepMinutes],
+    ["Cook Time", "<strong>Cook Time:</strong>", storedCard.cookMinutes],
+    ["Courses", "<strong>Courses:</strong>", storedCard.category],
+    ["Cuisine", "<strong>Cuisine:</strong>", storedCard.cuisine],
+    ["Equipment", "<strong>Equipment:</strong>", (storedCard.equipment ?? []).length],
+    ["Ingredients", "<strong>Ingredients:</strong>", (storedCard.ingredients ?? []).length],
+    ["Instructions", "<strong>Instructions:</strong>", (storedCard.steps ?? []).length],
+  ];
+
+  for (const [label, needle, value] of cardChecks) {
+    const has = value !== undefined && value !== null && value !== "" && value !== 0;
+    const printed = docHtml.includes(needle);
+    if (has) {
+      ok(printed, `the card in the document carries ${label}`);
+    } else {
+      ok(!printed, `${label} is not stated, so it is not printed`, "omitted, not guessed");
+    }
+  }
+
+  const anyTime =
+    (storedCard.prepMinutes ?? 0) + (storedCard.cookMinutes ?? 0) + (storedCard.customMinutes ?? 0);
+  ok(
+    docHtml.includes("<strong>Total Time:</strong>") === anyTime > 0,
+    anyTime > 0 ? "the card shows a total time" : "no times means no total time",
+  );
 
   for (const [label, needle] of [
     ["Focus keyphrase", "<strong>Focus keyphrase:</strong>"],

@@ -250,6 +250,56 @@ try {
   );
   check(rp.FSRI_CARDS === 4, "the grid is four cards");
 
+  /*
+   * The run-on paragraph, taken from a real draft.
+   *
+   * The writer named four recipes that all existed and wrote them as four
+   * lines, which became one paragraph. The link pass anchored two; the other
+   * two were plain text with nothing between them, so there was no list item
+   * to read and no anchor to follow, and two cards were lost to markup.
+   */
+  const wide = {
+    all: [
+      { wpId: 37819, title: "New Mexico Vegan Corn Chowder Recipe", slug: "corn-chowder", url: "", type: "post", terms: [] },
+      { wpId: 38166, title: "Quick Pinto Bean Chili Recipe", slug: "pinto-chili", url: "", type: "post", terms: [] },
+      { wpId: 37493, title: "One Pot Vegan Taco Soup", slug: "vegan-taco-soup", url: "", type: "post", terms: [] },
+      { wpId: 38165, title: "Easy Vegan Tofu Chili Recipe", slug: "tofu-chili-recipe", url: "", type: "post", terms: [] },
+      { wpId: 99, title: "Soup", slug: "soup", url: "", type: "post", terms: [] },
+    ],
+    bySlug: new Map(),
+    byTitle: new Map(),
+  };
+  for (const t of wide.all) {
+    wide.bySlug.set(`/${t.slug}`, t);
+    wide.byTitle.set(t.title.toLowerCase(), t);
+  }
+
+  const runOn = [
+    "<h2>✌️You'll also love these vegan soups:</h2>",
+    '<p>New Mexico Vegan Corn Chowder Recipe <a href="https://cinnamonsnail.com/vegan-taco-soup/">One Pot Vegan Taco Soup</a> Quick Pinto Bean Chili Recipe <a href="https://cinnamonsnail.com/tofu-chili-recipe/">Easy Vegan Tofu Chili</a> Recipe</p>',
+  ].join("\n");
+
+  const recovered = rp.resolveRelatedPosts(wide, runOn);
+  check(
+    recovered.length === 4,
+    "all four are recovered from a run-on paragraph",
+    recovered.map((r) => r.wpId).join(", "),
+  );
+  check(
+    !recovered.some((r) => r.wpId === 99),
+    "  and a title too short to be meant is not swept up",
+  );
+
+  const unrelated = rp.resolveRelatedPosts(
+    wide,
+    "<h2>✌️You'll also love these:</h2><p>Nothing here names a real post.</p>",
+  );
+  check(
+    unrelated.length === 0,
+    "  a section naming nothing real still resolves to nothing",
+    JSON.stringify(unrelated),
+  );
+
   /* ------------------------------------------------------------------ */
   console.log("\nThe export reads these sections as fields, not as page content");
 
