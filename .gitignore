@@ -67,3 +67,8 @@ poll-tmp.mjs
 
 # ad-hoc probe scripts written at the repo root during debugging
 /.[a-z]*.mjs
+
+# Local run logs
+.devserver.log
+.e2e.log
+.resume.log
