@@ -375,10 +375,23 @@ export function IntegrationCard({
                   name={`setting-${setting.key.toLowerCase()}`}
                   data-1p-ignore
                   data-lpignore="true"
+                  /*
+                   * Suggestions, not a closed list. A <select> would mean a
+                   * deploy every time the vendor ships a model, which is the
+                   * one thing this setting exists to avoid.
+                   */
+                  list={setting.options ? `${setting.key}-options` : undefined}
                   placeholder={setting.placeholder}
                   onChange={(e) => { setDraft(e.target.value); }}
                   className="h-9 min-w-0 flex-1"
                 />
+                {setting.options && (
+                  <datalist id={`${setting.key}-options`}>
+                    {setting.options.map((o) => (
+                      <option key={o} value={o} />
+                    ))}
+                  </datalist>
+                )}
                 <Button
                   size="sm"
                   className="h-9"

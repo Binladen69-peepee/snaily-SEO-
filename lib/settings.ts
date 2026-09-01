@@ -34,6 +34,14 @@ export type SettingSpec = {
   /** Model ids and client ids are not secret; only mask what needs masking. */
   secret: boolean;
   placeholder: string;
+  /**
+   * Known-good values, offered as suggestions.
+   *
+   * Suggestions, not a closed list: the field stays free text so a model
+   * released next week can be typed in without waiting for a deploy, which is
+   * the entire reason this setting is editable at runtime.
+   */
+  options?: string[];
 };
 
 export const SETTINGS: SettingSpec[] = [
@@ -104,10 +112,28 @@ export const SETTINGS: SettingSpec[] = [
   {
     key: "GROK_MODEL",
     label: "AI model",
+    /*
+     * The default named here used to be llama-3.3-70b-versatile, which Groq
+     * had already retired — the description was telling the operator to expect
+     * a model that no longer exists.
+     */
     description:
-      "Leave blank for the vendor default (llama-3.3-70b-versatile on Groq, grok-4 on xAI).",
+      "Which model the Drafter writes with. Leave blank for the vendor default (openai/gpt-oss-120b on Groq, grok-4 on xAI). Suggestions are the models this account can reach; any id can be typed.",
     secret: false,
-    placeholder: "llama-3.3-70b-versatile",
+    placeholder: "openai/gpt-oss-120b",
+    /*
+     * The chat-capable models on the client's Groq key, largest first. The
+     * whisper, guard and orpheus entries it also returns are speech and safety
+     * models and cannot write an article, so they are not offered.
+     */
+    options: [
+      "openai/gpt-oss-120b",
+      "qwen/qwen3.8-27b",
+      "qwen/qwen3.6-27b",
+      "openai/gpt-oss-20b",
+      "groq/compound",
+      "groq/compound-mini",
+    ],
   },
   {
     key: "GOOGLE_CLIENT_ID",

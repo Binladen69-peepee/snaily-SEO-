@@ -10,6 +10,7 @@
  */
 
 import { estimateTokens, stageTimeoutMs } from "@/lib/ai-policy";
+import { ensureSettings } from "@/lib/settings";
 
 export class AiError extends Error {
   constructor(
@@ -372,6 +373,20 @@ export async function completeDetailed(
     temperature = 0.7,
     retryOnRateLimit = false,
   } = opts;
+  /*
+   * Read the encrypted settings store before asking which model to use.
+   *
+   * GROK_MODEL has been an editable field in Integrations the whole time and
+   * nothing here ever loaded it, so the value was saved, masked, displayed
+   * back — and ignored. The owner set "qwen/qwen3.8-27b" and the next sixteen
+   * stages ran on the built-in default without a word anywhere, which is the
+   * same fault that made a rotated DataForSEO key need a redeploy.
+   *
+   * Every other provider hydrates before reading credentials. This one is the
+   * exception, and there was no reason for it beyond nobody having noticed.
+   */
+  await ensureSettings();
+
   const model = opts.model ?? aiModel();
   const startedAt = Date.now();
   const key = aiKey();

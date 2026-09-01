@@ -137,6 +137,14 @@ try {
     ["lib/keywords/serp-api-guard.ts", "SerpApi"],
     ["app/api/auth/google/route.ts", "Google sign-in"],
     ["app/api/google/callback/route.ts", "Google callback"],
+    /*
+     * The AI client was the one provider that never hydrated, and the symptom
+     * was silent: GROK_MODEL is an editable field in Integrations, so the owner
+     * set "qwen/qwen3.8-27b", the value was stored and read back to them — and
+     * sixteen stages then ran on the built-in default, with nothing anywhere
+     * saying which model had actually written the article.
+     */
+    ["lib/ai.ts", "the AI writer"],
   ];
   for (const [file, label] of wired) {
     const text = fs.readFileSync(file, "utf8");
@@ -146,6 +154,41 @@ try {
       file,
     );
   }
+  /* ------------------------------------------------------------------ */
+  console.log("\nThe model is chosen at runtime, not compiled in");
+
+  const ai = fs.readFileSync("lib/ai.ts", "utf8");
+  check(
+    /const configured = env\("GROK_MODEL", "GROQ_MODEL", "AI_MODEL"\)/.test(ai),
+    "the model id comes from settings, under any of three names",
+  );
+  check(
+    /await ensureSettings\(\);[\s\S]{0,120}const model = opts\.model \?\? aiModel\(\)/.test(ai),
+    "and the store is read before the model is chosen, not after",
+  );
+  check(
+    /DEFAULT_MODEL\[aiVendor\(\)\]/.test(ai),
+    "an unset model still falls back to the vendor default",
+  );
+
+  // Comments in the spec name the models that were deliberately left out, so
+  // they have to come off before asking what the list actually offers.
+  const spec = (/\{\s*key: "GROK_MODEL",[\s\S]*?\n  \},/.exec(src)?.[0] ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*/g, "");
+  check(/options: \[/.test(spec), "the model field offers known-good ids");
+  check(
+    /"qwen\/qwen3\.8-27b"/.test(spec),
+    "  including the Qwen model the owner asked to test",
+  );
+  check(
+    !/whisper|orpheus|prompt-guard/.test(spec),
+    "  and not the speech or safety models, which cannot write an article",
+  );
+  check(
+    /placeholder: "openai\/gpt-oss-120b"/.test(spec),
+    "  with the real current default named, not the retired llama one",
+  );
 } finally {
   built.cleanup();
 }
