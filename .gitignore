@@ -11,8 +11,9 @@ next-env.d.ts
 
 .vercel
 
-# Scratch build dirs — scripts/compile.mjs emits compiled TS here so the tests
-# can import the real modules. Removed on exit; ignored in case one is not.
+# Scratch build dirs — scripts compile TS here so tests can import real modules.
+# Removed on exit; ignored in case one is not.
+.tmp/
 .linktest-*
 .overviewtest-*
 .editortest-*
