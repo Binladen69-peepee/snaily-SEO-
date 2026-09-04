@@ -79,3 +79,4 @@ poll-tmp.mjs
 # Never commit a real environment file
 .env.production
 .env.*.local
+.vercel-prod.env.local
