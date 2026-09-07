@@ -78,16 +78,20 @@ export type DeepDiveParams = {
   filters: KeywordFilters;
 };
 
-/** Phrases from one source, however that source happens to work. */
+/**
+ * Phrases from one source, however that source happens to work.
+ *
+ * @param deadline — epoch ms after which expansion stops. Avoids Vercel
+ *   function timeout when "Deep sweep" fans out to hundreds of requests.
+ */
 async function phrasesFrom(
   source: DeepDiveSource,
   keyword: string,
   country: string,
   expand: boolean,
+  deadline?: number,
 ): Promise<string[]> {
   if (source === "related") {
-    // Google's related searches and People Also Ask, through the provider that
-    // already caches SerpApi responses.
     const provider = getKeywordProvider();
     const detail = await provider.detail(keyword, country, "en");
     return [
@@ -97,9 +101,6 @@ async function phrasesFrom(
   }
 
   if (source === "competitors") {
-    // What the pages currently ranking actually target, read from their own
-    // titles. The app measures this the same way the Competitor screens do:
-    // a site's own words, never an inferred ranking.
     const provider = getKeywordProvider();
     const detail = await provider.detail(keyword, country, "en");
     return detail.serp
@@ -117,7 +118,7 @@ async function phrasesFrom(
   }
 
   return expand
-    ? expandSuggestions(source, keyword, country)
+    ? expandSuggestions(source, keyword, country, undefined, deadline)
     : fetchSuggestions(source, keyword, country);
 }
 
@@ -150,6 +151,12 @@ function isUsable(phrase: string, seed: string): boolean {
   return true;
 }
 
+/**
+ * Safety margin before the Vercel function timeout. Sources stop expanding
+ * when the deadline passes, so partial results are returned rather than a 504.
+ */
+const DEADLINE_MARGIN_MS = 8_000;
+
 export async function runDeepDive(params: DeepDiveParams): Promise<DeepDiveResult> {
   const keyword = params.keyword.trim().toLowerCase();
   const provider = getKeywordProvider();
@@ -169,13 +176,46 @@ export async function runDeepDive(params: DeepDiveParams): Promise<DeepDiveResul
   const wanted = params.sources.filter((s) => SOURCE_BY_ID.get(s)?.available === true);
   const sources = wanted.length > 0 ? wanted : (["google"] as DeepDiveSource[]);
 
-  // Every source runs, and one failing never takes the search with it.
-  const settled = await Promise.allSettled(
-    sources.map(async (source) => ({
-      source,
-      phrases: await phrasesFrom(source, keyword, params.country, params.expand),
-    })),
-  );
+  /*
+   * Deadline: give the function 50 s of useful work, then stop launching new
+   * expansion batches. The remaining ~10 s is enough to collect, score and
+   * return whatever has arrived. Without this the a–z expansion across 8
+   * sources easily exceeds the 60 s Vercel timeout, and the client sees
+   * "Could not reach the server" instead of the partial (but large) result.
+   */
+  const deadline = Date.now() + (((params as { maxDurationMs?: number }).maxDurationMs) ?? 50_000);
+
+  /*
+   * Run sources in two waves so the provider-backed ones (which need a SERP
+   * call) do not compete with 200+ autocomplete fetches for bandwidth and
+   * connection slots.
+   */
+  const providerSources = sources.filter((s) => s === "related" || s === "competitors");
+  const autoSources = sources.filter((s) => s !== "related" && s !== "competitors");
+
+  const settled: PromiseSettledResult<{ source: DeepDiveSource; phrases: string[] }>[] = [];
+
+  // Wave 1: provider-backed sources (fast, usually cached).
+  if (providerSources.length > 0) {
+    const wave1 = await Promise.allSettled(
+      providerSources.map(async (source) => ({
+        source,
+        phrases: await phrasesFrom(source, keyword, params.country, params.expand, deadline),
+      })),
+    );
+    settled.push(...wave1);
+  }
+
+  // Wave 2: autocomplete sources (many external HTTP calls).
+  if (autoSources.length > 0) {
+    const wave2 = await Promise.allSettled(
+      autoSources.map(async (source) => ({
+        source,
+        phrases: await phrasesFrom(source, keyword, params.country, params.expand, deadline),
+      })),
+    );
+    settled.push(...wave2);
+  }
 
   /** Phrase → the sources that offered it, so a row can show its provenance. */
   const bySource = new Map<string, Set<DeepDiveSource>>();

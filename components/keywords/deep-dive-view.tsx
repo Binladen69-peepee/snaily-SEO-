@@ -334,9 +334,23 @@ export function DeepDiveView({
           }),
         });
 
-        const data = (await res.json()) as SearchResponse;
         if (!res.ok) {
-          toast.error(data.error ?? "Could not run that search.");
+          let msg = `Search failed (${String(res.status)})`;
+          try {
+            const errBody = (await res.json()) as { error?: string };
+            if (errBody.error) msg = errBody.error;
+          } catch {
+            /* Non-JSON error body (e.g. Vercel 504 HTML page) — use generic msg. */
+          }
+          toast.error(msg);
+          return;
+        }
+
+        let data: SearchResponse;
+        try {
+          data = (await res.json()) as SearchResponse;
+        } catch {
+          toast.error("Server returned an unreadable response. Try again.");
           return;
         }
 
@@ -357,7 +371,7 @@ export function DeepDiveView({
           setNotice(`No results from: ${data.emptySources.join(", ")}.`);
         }
       } catch {
-        toast.error("Could not reach the server.");
+        toast.error("Could not reach the server. Check your connection and try again.");
       } finally {
         setLoading(false);
       }

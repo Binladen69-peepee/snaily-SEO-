@@ -290,20 +290,24 @@ export async function fetchSuggestions(
  * hundred ideas the screen is for, and it is what KeySearch's own numbers imply
  * — no single autocomplete call returns 699 phrases. Each expansion is cached
  * independently, so a repeat search costs nothing at all.
+ *
+ * @param deadline — stop launching new batches after this timestamp so the
+ *   Vercel function can return partial results instead of timing out.
  */
 export async function expandSuggestions(
   source: DeepDiveSource,
   keyword: string,
   country: string,
   alphabet = "abcdefghijklmnopqrstuvwxyz",
+  deadline?: number,
 ): Promise<string[]> {
   const seeds = [keyword, ...[...alphabet].map((c) => `${keyword} ${c}`)];
 
-  // Batched so a 27-request fan-out does not open 27 sockets at once.
   const found = new Set<string>();
-  const BATCH = 6;
+  const BATCH = 4;
 
   for (let i = 0; i < seeds.length; i += BATCH) {
+    if (deadline && Date.now() > deadline) break;
     const batch = await Promise.all(
       seeds.slice(i, i + BATCH).map((seed) => fetchSuggestions(source, seed, country)),
     );
