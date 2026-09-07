@@ -50,26 +50,31 @@ export async function POST(req: Request) {
 
   const keywords = [...new Set(parsed.data.keywords.map((k) => k.toLowerCase()))];
 
-  try {
-    /*
-     * Sequential, not parallel. Ten simultaneous SERP requests is the shape of
-     * traffic that gets an API key rate-limited, and the whole point of this
-     * endpoint is that it runs rarely and deliberately.
-     */
-    const results: Record<string, unknown> = {};
-    for (const keyword of keywords) {
-      results[keyword] = await enrichKeyword(keyword, parsed.data.country);
-    }
+  /*
+   * Sequential, not parallel. Ten simultaneous SERP requests is the shape of
+   * traffic that gets an API key rate-limited, and the whole point of this
+   * endpoint is that it runs rarely and deliberately.
+   *
+   * Time-guarded: stop processing before the function timeout so the keywords
+   * that DID finish are returned. The client sends the next batch automatically.
+   */
+  const deadline = Date.now() + 50_000;
+  const results: Record<string, unknown> = {};
 
-    return NextResponse.json({ results });
-  } catch (err) {
-    if (err instanceof ProviderError) {
-      return NextResponse.json({ error: err.message }, { status: 502 });
+  for (const keyword of keywords) {
+    if (Date.now() > deadline) break;
+    try {
+      results[keyword] = await enrichKeyword(keyword, parsed.data.country);
+    } catch (err) {
+      if (err instanceof ProviderError) {
+        console.warn(`[deep-dive enrich] ${keyword}: ${err.message}`);
+        results[keyword] = null;
+      } else {
+        console.error(`[deep-dive enrich] ${keyword}:`, err);
+        results[keyword] = null;
+      }
     }
-    console.error("[deep-dive enrich]", err);
-    return NextResponse.json(
-      { error: "Could not analyse those keywords right now." },
-      { status: 502 },
-    );
   }
+
+  return NextResponse.json({ results });
 }

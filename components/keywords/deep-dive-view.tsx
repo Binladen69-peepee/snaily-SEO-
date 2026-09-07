@@ -82,7 +82,7 @@ type SearchResponse = {
   error?: string;
 };
 
-const MAX_ENRICH = 25;
+const MAX_ENRICH = 5;
 
 /** Twelve months of volume as a 60×16 sparkline. */
 function Sparkline({ trend }: { trend: number[] }) {
