@@ -82,7 +82,7 @@ type SearchResponse = {
   error?: string;
 };
 
-const MAX_ENRICH = 5;
+const MAX_ENRICH = 1;
 
 /** Twelve months of volume as a 60×16 sparkline. */
 function Sparkline({ trend }: { trend: number[] }) {
@@ -248,8 +248,6 @@ export function DeepDiveView({
 
     cancelBulk.current = false;
 
-    // What this will actually cost. Reads the SERP cache and the plan's
-    // account page; neither spends a search.
     let plan: BulkPlan;
     try {
       const res = await fetch("/api/keywords/enrich/plan", {
@@ -272,37 +270,45 @@ export function DeepDiveView({
     setBulkNotice(plan);
     setBulkProgress({ done: 0, total: queue.length });
 
+    /*
+     * Process keywords 3 at a time in parallel. Each call sends just 1 keyword
+     * so it finishes well within the Vercel function timeout. One keyword
+     * failing never blocks the others.
+     */
+    const CONCURRENCY = 3;
+    let done = 0;
+
     try {
-      for (let i = 0; i < queue.length; i += MAX_ENRICH) {
+      for (let i = 0; i < queue.length; i += CONCURRENCY) {
         if (cancelBulk.current) break;
-        const batch = queue.slice(i, i + MAX_ENRICH);
+        const chunk = queue.slice(i, i + CONCURRENCY);
 
-        const res = await fetch("/api/keywords/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keywords: batch, country: forCountry }),
-        });
+        const results = await Promise.allSettled(
+          chunk.map(async (kw) => {
+            const res = await fetch("/api/keywords/enrich", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ keywords: [kw], country: forCountry }),
+            });
+            if (!res.ok) return null;
+            const data = (await res.json()) as {
+              results?: Record<string, SerpSnapshot | null>;
+            };
+            return data.results ?? null;
+          }),
+        );
 
-        let data: {
-          results?: Record<string, SerpSnapshot | null>;
-          error?: string;
-        } = {};
-        try {
-          data = (await res.json()) as typeof data;
-        } catch {
-          break;
+        for (const r of results) {
+          if (r.status === "fulfilled" && r.value) {
+            setRows((current) => mergeSnapshots(current, r.value!));
+          }
         }
-        if (!res.ok || !data.results) break;
 
-        const found = data.results;
-        setRows((current) => mergeSnapshots(current, found));
-        setBulkProgress({
-          done: Math.min(i + batch.length, queue.length),
-          total: queue.length,
-        });
+        done += chunk.length;
+        setBulkProgress({ done: Math.min(done, queue.length), total: queue.length });
       }
     } catch {
-      /* A failed batch stops the run; the rows it did fill are kept. */
+      /* A failed chunk stops the run; the rows it did fill are kept. */
     } finally {
       setBulkProgress(null);
     }
