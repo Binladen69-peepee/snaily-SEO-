@@ -111,6 +111,59 @@ export async function hasFreshSerp(
   return false;
 }
 
+/**
+ * Fresh-cache check for many keywords in two queries instead of hundreds.
+ * Order of `queries` is preserved in the returned boolean array.
+ */
+export async function hasFreshSerpMany(
+  queries: string[],
+  country: string,
+  opts: { depth?: number; language?: string; device?: string } = {},
+): Promise<boolean[]> {
+  if (queries.length === 0) return [];
+
+  const language = opts.language ?? "en";
+  const depth = opts.depth ?? 10;
+  const device = opts.device ?? "desktop";
+  const cutoff = new Date(Date.now() - CACHE_TTL_MS);
+
+  const normKeys = queries.map((q) =>
+    cacheQueryKey({ keyword: q, language, depth, device }),
+  );
+  const legacyKeys = depth <= 10 ? queries.map((q) => q.toLowerCase()) : [];
+
+  const [normRows, legacyRows] = await Promise.all([
+    prisma.serpCache.findMany({
+      where: {
+        engine: SERP_NORM_ENGINE,
+        country,
+        query: { in: [...new Set(normKeys)] },
+        fetchedAt: { gte: cutoff },
+      },
+      select: { query: true },
+    }),
+    legacyKeys.length === 0
+      ? Promise.resolve([] as { query: string }[])
+      : prisma.serpCache.findMany({
+          where: {
+            engine: "google",
+            country,
+            query: { in: [...new Set(legacyKeys)] },
+            fetchedAt: { gte: cutoff },
+          },
+          select: { query: true },
+        }),
+  ]);
+
+  const freshNorm = new Set(normRows.map((r) => r.query));
+  const freshLegacy = new Set(legacyRows.map((r) => r.query));
+
+  return queries.map((q, i) => {
+    if (freshNorm.has(normKeys[i] ?? "")) return true;
+    return depth <= 10 && freshLegacy.has(q.toLowerCase());
+  });
+}
+
 export async function getNormalizedSerp(
   params: GetNormalizedSerpParams,
 ): Promise<NormalizedSerp> {

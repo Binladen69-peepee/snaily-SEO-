@@ -1,134 +1,23 @@
 import { prisma } from "@/lib/db";
+import type { DeepDiveSource } from "@/lib/keywords/deep-dive-sources";
+
+export {
+  AUTO_ENRICH_CAP,
+  isSource,
+  SOURCE_BY_ID,
+  SOURCES,
+  SUGGEST_SOURCES,
+  type DeepDiveSource,
+  type SourceInfo,
+} from "@/lib/keywords/deep-dive-sources";
 
 /**
  * Where Deep Dive's keyword ideas come from.
  *
  * Each source is a real autocomplete endpoint, hit directly rather than through
- * SerpApi. That matters for cost: SerpApi bills per search and the plan allows
- * 250 a month, so routing eight suggestion sources through it would empty the
- * quota on a single afternoon. These endpoints are the ones the search boxes on
- * those sites use, they are free, and they return exactly what a real user
- * typing that phrase would be offered.
- *
- * Responses are cached in `SerpCache` on the same 7-day TTL as everything else,
- * so re-running a search costs nothing.
- *
- * Two of KeySearch's sources are deliberately absent rather than faked:
- * Etsy and Pinterest have no public autocomplete endpoint (Etsy's returns 404,
- * Pinterest's 403 without a session), and a keyword *database* is a bought
- * dataset this app does not have. They are listed as unavailable with the
- * reason, because a source that quietly returns Google's results under
- * another name is worse than one that says it is not connected.
+ * a paid SERP provider. Responses are cached in `SerpCache` on the same 7-day
+ * TTL as everything else, so re-running a search costs nothing.
  */
-
-export const SUGGEST_SOURCES = [
-  "related",
-  "google",
-  "bing",
-  "youtube",
-  "duckduckgo",
-  "amazon",
-  "ebay",
-  "competitors",
-  "database",
-  "etsy",
-  "pinterest",
-] as const;
-
-export type DeepDiveSource = (typeof SUGGEST_SOURCES)[number];
-
-export type SourceInfo = {
-  id: DeepDiveSource;
-  label: string;
-  /** One line explaining what the source actually is. */
-  note: string;
-  /** False when nothing can be fetched; `reason` says why. */
-  available: boolean;
-  reason?: string;
-  /** True when it spends SerpApi quota rather than a free endpoint. */
-  costsQuota?: boolean;
-};
-
-export const SOURCES: SourceInfo[] = [
-  {
-    id: "related",
-    label: "Related Keywords",
-    note: "Google's own related searches and People Also Ask for this phrase.",
-    available: true,
-    costsQuota: true,
-  },
-  {
-    id: "google",
-    label: "Google Suggest",
-    note: "What Google autocompletes as you type.",
-    available: true,
-  },
-  {
-    id: "bing",
-    label: "Bing Suggest",
-    note: "Bing's autocomplete.",
-    available: true,
-  },
-  {
-    id: "youtube",
-    label: "YouTube Suggest",
-    note: "YouTube search autocomplete — video intent.",
-    available: true,
-  },
-  {
-    id: "duckduckgo",
-    label: "DuckDuckGo Suggest",
-    note: "DuckDuckGo's autocomplete.",
-    available: true,
-  },
-  {
-    id: "amazon",
-    label: "Amazon Suggest",
-    note: "Amazon product search autocomplete — buying intent.",
-    available: true,
-  },
-  {
-    id: "ebay",
-    label: "eBay Suggest",
-    note: "eBay search autocomplete — buying intent.",
-    available: true,
-  },
-  {
-    id: "competitors",
-    label: "Competitors",
-    note: "Phrases the top-ranking pages for this keyword target in their own titles and headings.",
-    available: true,
-    costsQuota: true,
-  },
-  {
-    id: "database",
-    label: "Database",
-    note: "A licensed keyword database.",
-    available: false,
-    reason:
-      "No keyword database is connected. Volume and CPC across the app are estimated for the same reason.",
-  },
-  {
-    id: "etsy",
-    label: "Etsy Suggest",
-    note: "Etsy search autocomplete.",
-    available: false,
-    reason: "Etsy has no public autocomplete endpoint — it returns 404 to anything but its own site.",
-  },
-  {
-    id: "pinterest",
-    label: "Pinterest Suggest",
-    note: "Pinterest search autocomplete.",
-    available: false,
-    reason: "Pinterest's typeahead refuses requests without a logged-in session.",
-  },
-];
-
-export const SOURCE_BY_ID = new Map(SOURCES.map((s) => [s.id, s]));
-
-export function isSource(value: string): value is DeepDiveSource {
-  return SOURCE_BY_ID.has(value as DeepDiveSource);
-}
 
 /* ---------------------------------------------------------------------------
  * Fetching

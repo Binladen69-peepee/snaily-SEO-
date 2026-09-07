@@ -17,6 +17,7 @@ const SOURCES = [
   "lib/keywords/types.ts",
   "lib/keywords/estimate.ts",
   "lib/keywords/intent-tabs.ts",
+  "lib/keywords/deep-dive-sources.ts",
   "lib/keywords/suggest-sources.ts",
 ];
 

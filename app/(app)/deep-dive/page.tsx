@@ -1,7 +1,7 @@
 import { DeepDiveView } from "@/components/keywords/deep-dive-view";
 import { Badge } from "@/components/ui/badge";
 import { getKeywordProvider } from "@/lib/keywords/provider";
-import { SOURCES } from "@/lib/keywords/suggest-sources";
+import { SOURCES } from "@/lib/keywords/deep-dive-sources";
 
 export const metadata = { title: "Deep Dive · Snaily SEO" };
 

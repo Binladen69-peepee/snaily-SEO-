@@ -24,10 +24,13 @@ import {
   missingSnapshots,
 } from "@/lib/keywords/merge-snapshots";
 import { opportunityScore } from "@/lib/keywords/opportunity";
-import type {
-  DeepDiveSource,
-  SourceInfo,
-} from "@/lib/keywords/suggest-sources";
+import {
+  AUTO_ENRICH_CAP,
+  isSource,
+  type DeepDiveSource,
+  type SourceInfo,
+} from "@/lib/keywords/deep-dive-sources";
+import { mergeDeepDive } from "@/lib/keywords/deep-dive-merge";
 import { COUNTRIES } from "@/lib/keywords/types";
 import { cn } from "@/lib/utils";
 
@@ -74,15 +77,7 @@ type Row = {
   serp: SerpSnapshot | null;
 };
 
-type SearchResponse = {
-  keyword: string;
-  rows: Row[];
-  emptySources: string[];
-  isMock: boolean;
-  error?: string;
-};
-
-const MAX_ENRICH = 1;
+const ENRICH_CONCURRENCY = 3;
 
 /** Twelve months of volume as a 60×16 sparkline. */
 function Sparkline({ trend }: { trend: number[] }) {
@@ -243,7 +238,7 @@ export function DeepDiveView({
    * search's list.
    */
   const autoEnrich = useCallback(async (forRows: Row[], forCountry: string) => {
-    const keywords = missingSnapshots(forRows);
+    const keywords = missingSnapshots(forRows).slice(0, AUTO_ENRICH_CAP);
     if (keywords.length === 0) return;
 
     cancelBulk.current = false;
@@ -255,9 +250,13 @@ export function DeepDiveView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keywords, country: forCountry }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error("Could not plan ranking-data lookups.");
+        return;
+      }
       plan = (await res.json()) as BulkPlan;
     } catch {
+      toast.error("Could not plan ranking-data lookups.");
       return;
     }
 
@@ -270,31 +269,29 @@ export function DeepDiveView({
     setBulkNotice(plan);
     setBulkProgress({ done: 0, total: queue.length });
 
-    /*
-     * Process keywords 3 at a time in parallel. Each call sends just 1 keyword
-     * so it finishes well within the Vercel function timeout. One keyword
-     * failing never blocks the others.
-     */
-    const CONCURRENCY = 3;
     let done = 0;
 
     try {
-      for (let i = 0; i < queue.length; i += CONCURRENCY) {
+      for (let i = 0; i < queue.length; i += ENRICH_CONCURRENCY) {
         if (cancelBulk.current) break;
-        const chunk = queue.slice(i, i + CONCURRENCY);
+        const chunk = queue.slice(i, i + ENRICH_CONCURRENCY);
 
         const results = await Promise.allSettled(
           chunk.map(async (kw) => {
-            const res = await fetch("/api/keywords/enrich", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ keywords: [kw], country: forCountry }),
-            });
-            if (!res.ok) return null;
-            const data = (await res.json()) as {
-              results?: Record<string, SerpSnapshot | null>;
-            };
-            return data.results ?? null;
+            try {
+              const res = await fetch("/api/keywords/enrich", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keywords: [kw], country: forCountry }),
+              });
+              if (!res.ok) return null;
+              const data = (await res.json()) as {
+                results?: Record<string, SerpSnapshot | null>;
+              };
+              return data.results ?? null;
+            } catch {
+              return null;
+            }
           }),
         );
 
@@ -308,7 +305,7 @@ export function DeepDiveView({
         setBulkProgress({ done: Math.min(done, queue.length), total: queue.length });
       }
     } catch {
-      /* A failed chunk stops the run; the rows it did fill are kept. */
+      /* Rows already filled are kept. */
     } finally {
       setBulkProgress(null);
     }
@@ -331,7 +328,6 @@ export function DeepDiveView({
       };
 
       try {
-        // 1) Fetch every source in parallel — each is its own short function.
         const sourceResults = await Promise.allSettled(
           selectedSources.map(async (source) => {
             const res = await fetch("/api/keywords/deep-dive/source", {
@@ -350,45 +346,36 @@ export function DeepDiveView({
 
         const sourcePhrases = sourceResults
           .filter(
-            (r): r is PromiseFulfilledResult<{ source: string; phrases: string[]; isMock: boolean }> =>
-              r.status === "fulfilled",
+            (r): r is PromiseFulfilledResult<{
+              source: string;
+              phrases: string[];
+              isMock: boolean;
+            }> => r.status === "fulfilled",
           )
-          .map((r) => r.value);
+          .flatMap((r) =>
+            isSource(r.value.source)
+              ? [
+                  {
+                    source: r.value.source,
+                    phrases: r.value.phrases,
+                    isMock: r.value.isMock,
+                  },
+                ]
+              : [],
+          );
 
-        if (sourcePhrases.length === 0) {
+        const anyPhrases = sourcePhrases.some((sp) => sp.phrases.length > 0);
+        if (!anyPhrases && sourcePhrases.length === 0) {
           toast.error("All sources failed. Try again.");
           return;
         }
 
-        // 2) Merge + score on the server (pure CPU, instant).
-        const mergeRes = await fetch("/api/keywords/deep-dive/merge", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            keyword: q,
-            country,
-            sourcePhrases,
-            filters,
-          }),
+        const data = mergeDeepDive({
+          keyword: q,
+          country,
+          sourcePhrases,
+          filters,
         });
-
-        if (!mergeRes.ok) {
-          let msg = `Search failed (${String(mergeRes.status)})`;
-          try {
-            const errBody = (await mergeRes.json()) as { error?: string };
-            if (errBody.error) msg = errBody.error;
-          } catch { /* non-JSON */ }
-          toast.error(msg);
-          return;
-        }
-
-        let data: SearchResponse;
-        try {
-          data = (await mergeRes.json()) as SearchResponse;
-        } catch {
-          toast.error("Server returned an unreadable response. Try again.");
-          return;
-        }
 
         setRows(data.rows);
         setSearched(data.keyword);
@@ -396,7 +383,6 @@ export function DeepDiveView({
         setTab("all");
         setBulkNotice(null);
 
-        // Fire and forget: the table is usable while the columns fill in.
         void autoEnrich(data.rows, country);
 
         if (data.rows.length === 0) {
@@ -887,11 +873,9 @@ export function DeepDiveView({
           <p className="inline-flex items-center gap-1">
             <Zap className="size-3 text-warning" aria-hidden />
             Est. Links, DA<sup>3</sup> and Ranking Pages are read off a real
-            results page. Rows searched in the last week fill in automatically
-            and cost nothing; the rest need a lookup — tick them and press
-            Analyse, up to {MAX_ENRICH} at a time. Each fresh one spends a
-            search from the monthly allowance, which is why they are not all
-            fetched for you.
+            results page for the first {AUTO_ENRICH_CAP} keywords. Cached rows
+            fill in immediately; the rest load a few at a time so the search
+            cannot time out.
           </p>
         </div>
       )}
@@ -943,7 +927,8 @@ function BulkBanner({
 
       {counts.skipped > 0 && (
         <span className="text-warning">
-          {counts.skipped} skipped — not enough allowance left.
+          {counts.skipped} not auto-filled — ranking data loads for the top{" "}
+          {AUTO_ENRICH_CAP} keywords so the search stays fast.
         </span>
       )}
 

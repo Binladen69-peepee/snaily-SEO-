@@ -4,7 +4,7 @@ import { Check, ChevronDown, Search, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import type { DeepDiveSource, SourceInfo } from "@/lib/keywords/suggest-sources";
+import type { DeepDiveSource, SourceInfo } from "@/lib/keywords/deep-dive-sources";
 import { cn } from "@/lib/utils";
 
 /**

@@ -59,6 +59,7 @@
     "test:template": "node --env-file=.env.local scripts/test-template.mjs",
     "test:link-picker": "node --env-file=.env.local scripts/test-link-picker.mjs",
     "test:deep-dive": "node --env-file=.env.local scripts/test-deep-dive.mjs",
+    "test:deep-dive-merge": "node scripts/test-deep-dive-merge.mjs",
     "test:export-live": "node --env-file=.env.local scripts/test-export-live.mjs",
     "style:benchmark": "node --env-file-if-exists=.env.local scripts/style-benchmark.mjs",
     "style:gap": "node --env-file-if-exists=.env.local scripts/style-gap.mjs",

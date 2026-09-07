@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getSession } from "@/lib/auth";
 import { runDeepDive } from "@/lib/keywords/deep-dive";
-import { isSource, SOURCES } from "@/lib/keywords/suggest-sources";
+import { isSource, SOURCES } from "@/lib/keywords/deep-dive-sources";
 import { ProviderError } from "@/lib/keywords/types";
 
 /**

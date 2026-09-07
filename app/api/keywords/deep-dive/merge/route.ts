@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getSession } from "@/lib/auth";
-import { mergeDeepDive, type SourcePhrases } from "@/lib/keywords/deep-dive";
-import { isSource, SOURCES } from "@/lib/keywords/suggest-sources";
+import { mergeDeepDive, type SourcePhrases } from "@/lib/keywords/deep-dive-merge";
+import { isSource, SOURCES } from "@/lib/keywords/deep-dive-sources";
 
 /**
  * Merge phrase lists from multiple sources into scored, deduplicated rows.
  *
- * Pure CPU — no external calls — so it finishes in milliseconds.
+ * Pure CPU. The Deep Dive UI now merges in the browser; this endpoint stays
+ * as a fallback for anything that still posts here.
  */
-export const maxDuration = 10;
+export const maxDuration = 30;
 
 const schema = z.object({
   keyword: z.string().trim().min(1).max(120),
@@ -63,13 +64,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const validPhrases: SourcePhrases[] = parsed.data.sourcePhrases
-    .filter((sp) => isSource(sp.source))
-    .map((sp) => ({
-      source: sp.source as SourcePhrases["source"],
-      phrases: sp.phrases,
-      isMock: sp.isMock,
-    }));
+  const validPhrases: SourcePhrases[] = parsed.data.sourcePhrases.flatMap((sp) =>
+    isSource(sp.source)
+      ? [{ source: sp.source, phrases: sp.phrases, isMock: sp.isMock }]
+      : [],
+  );
 
   const result = mergeDeepDive({
     keyword: parsed.data.keyword,
