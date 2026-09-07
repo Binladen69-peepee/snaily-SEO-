@@ -135,7 +135,7 @@ export function isSource(value: string): value is DeepDiveSource {
  * ------------------------------------------------------------------------ */
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 5_000;
 
 /**
  * A desktop browser's user agent.

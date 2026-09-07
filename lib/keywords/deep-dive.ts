@@ -78,30 +78,10 @@ export type DeepDiveParams = {
   filters: KeywordFilters;
 };
 
-/** Race a promise against a millisecond timer; returns null on timeout. */
-async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer!);
-  }
-}
-
-/** Max time a single provider.detail() call may take (seconds). */
-const PROVIDER_TIMEOUT_MS = 15_000;
-
 /**
  * Phrases from one source, however that source happens to work.
  *
- * @param deadline — epoch ms after which expansion stops. Avoids Vercel
- *   function timeout when "Deep sweep" fans out to hundreds of requests.
+ * @param deadline — epoch ms after which expansion stops.
  */
 async function phrasesFrom(
   source: DeepDiveSource,
@@ -112,11 +92,7 @@ async function phrasesFrom(
 ): Promise<string[]> {
   if (source === "related") {
     const provider = getKeywordProvider();
-    const detail = await withTimeout(
-      provider.detail(keyword, country, "en"),
-      PROVIDER_TIMEOUT_MS,
-    );
-    if (!detail) return [];
+    const detail = await provider.detail(keyword, country, "en");
     return [
       ...detail.related.map((k) => k.keyword),
       ...detail.questions.map((k) => k.keyword),
@@ -125,11 +101,7 @@ async function phrasesFrom(
 
   if (source === "competitors") {
     const provider = getKeywordProvider();
-    const detail = await withTimeout(
-      provider.detail(keyword, country, "en"),
-      PROVIDER_TIMEOUT_MS,
-    );
-    if (!detail) return [];
+    const detail = await provider.detail(keyword, country, "en");
     return detail.serp
       .flatMap((r) => [r.title, r.displayedLink])
       .map((t) => t.toLowerCase())
@@ -178,6 +150,120 @@ function isUsable(phrase: string, seed: string): boolean {
   return true;
 }
 
+/* ---------------------------------------------------------------------------
+ * Single-source fetch — one serverless invocation per source.
+ *
+ * Each call finishes in <8 s, well within the Vercel Hobby 10 s limit.
+ * The client fires one call per selected source in parallel and merges
+ * the phrase lists itself.
+ * ------------------------------------------------------------------------ */
+
+export type SourcePhrases = {
+  source: DeepDiveSource;
+  phrases: string[];
+  isMock: boolean;
+};
+
+export async function fetchSourcePhrases(
+  keyword: string,
+  country: string,
+  source: DeepDiveSource,
+  expand: boolean,
+): Promise<SourcePhrases> {
+  const kw = keyword.trim().toLowerCase();
+  const provider = getKeywordProvider();
+
+  if (kw === "" || SOURCE_BY_ID.get(source)?.available !== true) {
+    return { source, phrases: [], isMock: provider.isMock };
+  }
+
+  const deadline = Date.now() + 7_000;
+
+  let phrases: string[];
+  try {
+    phrases = await phrasesFrom(source, kw, country, expand, deadline);
+  } catch {
+    phrases = [];
+  }
+
+  const usable = phrases
+    .map((p) => p.trim().toLowerCase())
+    .filter((p) => isUsable(p, kw));
+
+  return { source, phrases: usable, isMock: provider.isMock };
+}
+
+/* ---------------------------------------------------------------------------
+ * Merge + score — called once on the client's collected source results.
+ * ------------------------------------------------------------------------ */
+
+export type MergeParams = {
+  keyword: string;
+  country: string;
+  sourcePhrases: SourcePhrases[];
+  filters: KeywordFilters;
+};
+
+export function mergeDeepDive(params: MergeParams): DeepDiveResult {
+  const keyword = params.keyword.trim().toLowerCase();
+  const bySource = new Map<string, Set<DeepDiveSource>>();
+  const bestRank = new Map<string, number>();
+  const emptySources: string[] = [];
+  let isMock = false;
+
+  for (const sp of params.sourcePhrases) {
+    if (sp.isMock) isMock = true;
+
+    if (sp.phrases.length === 0) {
+      emptySources.push(SOURCE_BY_ID.get(sp.source)?.label ?? sp.source);
+      continue;
+    }
+
+    sp.phrases.forEach((phrase, rank) => {
+      const set = bySource.get(phrase) ?? new Set<DeepDiveSource>();
+      set.add(sp.source);
+      bySource.set(phrase, set);
+      bestRank.set(phrase, Math.min(bestRank.get(phrase) ?? rank, rank));
+    });
+  }
+
+  if (!bySource.has(keyword)) {
+    bySource.set(
+      keyword,
+      new Set(params.sourcePhrases.map((sp) => sp.source)),
+    );
+  }
+
+  const allSources = params.sourcePhrases.map((sp) => sp.source);
+
+  const rows: DeepDiveRow[] = [...bySource.entries()]
+    .map(([phrase, set]) => ({
+      ...estimateKeyword(phrase, params.country),
+      sources: [...set],
+      serp: null,
+    }))
+    .filter((row) => passesFilters(row, params.filters))
+    .sort(
+      (a, b) =>
+        (bestRank.get(a.keyword) ?? 999) - (bestRank.get(b.keyword) ?? 999) ||
+        b.sources.length - a.sources.length ||
+        a.keyword.localeCompare(b.keyword),
+    );
+
+  return {
+    keyword,
+    country: params.country,
+    source: allSources[0] ?? "google",
+    rows,
+    counts: countTabs(rows),
+    emptySources: [...new Set(emptySources)],
+    isMock,
+  };
+}
+
+/**
+ * Legacy all-in-one entry point. Still used by enrichFromCache.
+ */
 export async function runDeepDive(params: DeepDiveParams): Promise<DeepDiveResult> {
   const keyword = params.keyword.trim().toLowerCase();
   const provider = getKeywordProvider();
@@ -197,102 +283,21 @@ export async function runDeepDive(params: DeepDiveParams): Promise<DeepDiveResul
   const wanted = params.sources.filter((s) => SOURCE_BY_ID.get(s)?.available === true);
   const sources = wanted.length > 0 ? wanted : (["google"] as DeepDiveSource[]);
 
-  /*
-   * Hard deadline: 40 s of useful work. Expansion batches stop after this,
-   * and provider.detail() calls have their own 15 s cap. This keeps the
-   * total well under Vercel's 60 s function limit.
-   */
-  const deadline = Date.now() + 40_000;
-
-  // All sources run in parallel; each one is individually time-bounded.
-  const settled = await Promise.allSettled(
-    sources.map(async (source) => ({
-      source,
-      phrases: await phrasesFrom(source, keyword, params.country, params.expand, deadline),
-    })),
+  const results = await Promise.all(
+    sources.map((s) => fetchSourcePhrases(keyword, params.country, s, params.expand)),
   );
 
-  /** Phrase → the sources that offered it, so a row can show its provenance. */
-  const bySource = new Map<string, Set<DeepDiveSource>>();
-  /**
-   * Phrase → the best position any source gave it.
-   *
-   * Autocomplete is returned roughly most-searched-first, which makes this the
-   * only signal in the whole row that reflects real demand. Sorting by the
-   * estimated volume instead threw it away: that figure is derived from a hash
-   * of the phrase plus its word count, and measured against Google's own
-   * ordering it comes out at a Spearman rho of -0.47 — worse than not sorting.
-   */
-  const bestRank = new Map<string, number>();
-  const emptySources: string[] = [];
-
-  for (const outcome of settled) {
-    if (outcome.status !== "fulfilled") continue;
-    const { source, phrases } = outcome.value;
-
-    const usable = phrases
-      .map((p) => p.trim().toLowerCase())
-      .filter((p) => isUsable(p, keyword));
-
-    if (usable.length === 0) {
-      emptySources.push(SOURCE_BY_ID.get(source)?.label ?? source);
-      continue;
-    }
-
-    usable.forEach((phrase, rank) => {
-      const set = bySource.get(phrase) ?? new Set<DeepDiveSource>();
-      set.add(source);
-      bySource.set(phrase, set);
-      bestRank.set(phrase, Math.min(bestRank.get(phrase) ?? rank, rank));
-    });
-  }
-
-  for (const outcome of settled) {
-    if (outcome.status === "rejected") emptySources.push("a source that failed");
-  }
-
-  // The seed itself belongs in the list — it is what was searched for.
-  if (!bySource.has(keyword)) bySource.set(keyword, new Set(sources));
-
-  const rows: DeepDiveRow[] = [...bySource.entries()]
-    .map(([phrase, set]) => ({
-      ...estimateKeyword(phrase, params.country),
-      sources: [...set],
-      serp: null,
-    }))
-    .filter((row) => passesFilters(row, params.filters))
-    /*
-     * Ordered by how prominently the engines themselves offered the phrase,
-     * then by how many engines agreed. Both are observations; the estimated
-     * volume is not, so it does not decide what the author reads first.
-     */
-    .sort(
-      (a, b) =>
-        (bestRank.get(a.keyword) ?? 999) - (bestRank.get(b.keyword) ?? 999) ||
-        b.sources.length - a.sources.length ||
-        a.keyword.localeCompare(b.keyword),
-    );
-
-  /*
-   * Fill the measured columns for every row we can do for free.
-   *
-   * Est. Links, DA and Ranking Pages come off a real results page, and a fresh
-   * lookup costs one of 250 searches a month — which is why they are not
-   * fetched for the whole list. But a keyword whose page is already in the
-   * seven-day cache costs nothing at all, and leaving those columns blank when
-   * the answer already sits in the database is wasted data.
-   */
-  await enrichFromCache(rows, params.country);
-
-  return {
+  const merged = mergeDeepDive({
     keyword,
     country: params.country,
-    source: sources[0] ?? "google",
-    rows,
-    counts: countTabs(rows),
-    emptySources: [...new Set(emptySources)],
-    isMock: provider.isMock,
-  };
+    sourcePhrases: results,
+    filters: params.filters,
+  });
+
+  await enrichFromCache(merged.rows, params.country);
+  merged.counts = countTabs(merged.rows);
+
+  return merged;
 }
 
 /** How many cached rows to reduce at once — each is CPU only, no network. */

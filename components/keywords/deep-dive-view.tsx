@@ -315,40 +315,70 @@ export function DeepDiveView({
 
       setLoading(true);
       setNotice(null);
+
+      const filters = {
+        ...(contains.trim() !== "" ? { contains: contains.trim() } : {}),
+        ...(excludes.trim() !== "" ? { excludes: excludes.trim() } : {}),
+        ...(minVolume.trim() !== "" && Number.isFinite(Number(minVolume))
+          ? { volumeMin: Number(minVolume) }
+          : {}),
+      };
+
       try {
-        const res = await fetch("/api/keywords/deep-dive", {
+        // 1) Fetch every source in parallel — each is its own short function.
+        const sourceResults = await Promise.allSettled(
+          selectedSources.map(async (source) => {
+            const res = await fetch("/api/keywords/deep-dive/source", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ keyword: q, country, source, expand }),
+            });
+            if (!res.ok) return { source, phrases: [] as string[], isMock: false };
+            return (await res.json()) as {
+              source: string;
+              phrases: string[];
+              isMock: boolean;
+            };
+          }),
+        );
+
+        const sourcePhrases = sourceResults
+          .filter(
+            (r): r is PromiseFulfilledResult<{ source: string; phrases: string[]; isMock: boolean }> =>
+              r.status === "fulfilled",
+          )
+          .map((r) => r.value);
+
+        if (sourcePhrases.length === 0) {
+          toast.error("All sources failed. Try again.");
+          return;
+        }
+
+        // 2) Merge + score on the server (pure CPU, instant).
+        const mergeRes = await fetch("/api/keywords/deep-dive/merge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             keyword: q,
             country,
-            sources: selectedSources,
-            expand,
-            filters: {
-              ...(contains.trim() !== "" ? { contains: contains.trim() } : {}),
-              ...(excludes.trim() !== "" ? { excludes: excludes.trim() } : {}),
-              ...(minVolume.trim() !== "" && Number.isFinite(Number(minVolume))
-                ? { volumeMin: Number(minVolume) }
-                : {}),
-            },
+            sourcePhrases,
+            filters,
           }),
         });
 
-        if (!res.ok) {
-          let msg = `Search failed (${String(res.status)})`;
+        if (!mergeRes.ok) {
+          let msg = `Search failed (${String(mergeRes.status)})`;
           try {
-            const errBody = (await res.json()) as { error?: string };
+            const errBody = (await mergeRes.json()) as { error?: string };
             if (errBody.error) msg = errBody.error;
-          } catch {
-            /* Non-JSON error body (e.g. Vercel 504 HTML page) — use generic msg. */
-          }
+          } catch { /* non-JSON */ }
           toast.error(msg);
           return;
         }
 
         let data: SearchResponse;
         try {
-          data = (await res.json()) as SearchResponse;
+          data = (await mergeRes.json()) as SearchResponse;
         } catch {
           toast.error("Server returned an unreadable response. Try again.");
           return;
