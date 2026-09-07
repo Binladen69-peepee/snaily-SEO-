@@ -78,6 +78,25 @@ export type DeepDiveParams = {
   filters: KeywordFilters;
 };
 
+/** Race a promise against a millisecond timer; returns null on timeout. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+/** Max time a single provider.detail() call may take. */
+const PROVIDER_TIMEOUT_MS = 25_000;
+
 /**
  * Phrases from one source, however that source happens to work.
  *
@@ -92,7 +111,11 @@ async function phrasesFrom(
 ): Promise<string[]> {
   if (source === "related") {
     const provider = getKeywordProvider();
-    const detail = await provider.detail(keyword, country, "en");
+    const detail = await withTimeout(
+      provider.detail(keyword, country, "en"),
+      PROVIDER_TIMEOUT_MS,
+    );
+    if (!detail) return [];
     return [
       ...detail.related.map((k) => k.keyword),
       ...detail.questions.map((k) => k.keyword),
@@ -101,7 +124,11 @@ async function phrasesFrom(
 
   if (source === "competitors") {
     const provider = getKeywordProvider();
-    const detail = await provider.detail(keyword, country, "en");
+    const detail = await withTimeout(
+      provider.detail(keyword, country, "en"),
+      PROVIDER_TIMEOUT_MS,
+    );
+    if (!detail) return [];
     return detail.serp
       .flatMap((r) => [r.title, r.displayedLink])
       .map((t) => t.toLowerCase())
@@ -177,7 +204,7 @@ export async function fetchSourcePhrases(
     return { source, phrases: [], isMock: provider.isMock };
   }
 
-  const deadline = Date.now() + 7_000;
+  const deadline = Date.now() + 45_000;
 
   let phrases: string[];
   try {

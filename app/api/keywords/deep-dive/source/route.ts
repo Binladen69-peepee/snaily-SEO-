@@ -10,10 +10,10 @@ import { ProviderError } from "@/lib/keywords/types";
  * Single-source phrase fetch for Deep Dive.
  *
  * The client calls this once per selected source, in parallel. Each call
- * finishes well under 10 s (the Vercel Hobby function limit), whereas the
- * old all-in-one endpoint needed 30–60 s for eight expanded sources.
+ * runs independently so the total wall-clock time is just the slowest source.
+ * Vercel Hobby supports up to 60 s per function with maxDuration.
  */
-export const maxDuration = 10;
+export const maxDuration = 55;
 
 const schema = z.object({
   keyword: z.string().trim().min(1).max(120),
