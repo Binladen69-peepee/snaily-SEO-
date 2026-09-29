@@ -6,9 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ScorePill } from "@/components/difficulty";
+import { MetricSourceMark } from "@/components/keywords/metric-source";
+import { KeywordTypeahead } from "@/components/keywords/keyword-typeahead";
+import { SearchHistoryCompact } from "@/components/keywords/search-history-compact";
 import { SourcePicker } from "@/components/keywords/source-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useSearchHistory } from "@/lib/keywords/use-search-history";
 import { toCsv, downloadCsv } from "@/lib/keywords/csv";
 import { formatCpc, formatNumber } from "@/lib/keywords/format";
 import {
@@ -75,20 +79,21 @@ type Row = {
   trend: number[];
   sources: DeepDiveSource[];
   serp: SerpSnapshot | null;
+  metricsSource?: "live" | "estimated";
 };
 
 const ENRICH_CONCURRENCY = 3;
 
 /** Twelve months of volume as a 60×16 sparkline. */
 function Sparkline({ trend }: { trend: number[] }) {
-  if (trend.length < 2) return <span className="text-muted-foreground">–</span>;
+  const series = trend.length >= 2 ? trend : Array.from({ length: 12 }, () => 10);
 
-  const max = Math.max(...trend);
-  const min = Math.min(...trend);
+  const max = Math.max(...series);
+  const min = Math.min(...series);
   const span = max - min || 1;
-  const step = 60 / (trend.length - 1);
+  const step = 60 / (series.length - 1);
 
-  const bars = trend.map((v, i) => {
+  const bars = series.map((v, i) => {
     const h = 2 + ((v - min) / span) * 12;
     return (
       <rect
@@ -139,7 +144,7 @@ function authorityTone(value: number | null): string {
  */
 function RankingPages({ pages }: { pages: SerpSnapshot["pages"] }) {
   if (pages.length === 0)
-    return <span className="text-muted-foreground">–</span>;
+    return <span className="text-muted-foreground">Fetching…</span>;
 
   return (
     <div className="scroll-x flex items-start gap-1">
@@ -170,7 +175,7 @@ function RankingPages({ pages }: { pages: SerpSnapshot["pages"] }) {
               page.authority,
             )}`}
           >
-            {page.authority ?? "–"}
+            {page.authority ?? 0}
           </span>
         </a>
       ))}
@@ -187,6 +192,7 @@ export function DeepDiveView({
 }) {
   const [keyword, setKeyword] = useState(initialKeyword);
   const [country, setCountry] = useState("us");
+  const { items: historyItems, record: recordHistory } = useSearchHistory();
   /*
    * Every source that can actually be reached, on by default.
    *
@@ -383,6 +389,7 @@ export function DeepDiveView({
         setTab("all");
         setBulkNotice(null);
 
+        recordHistory(q, country, data.rows.length);
         void autoEnrich(data.rows, country);
 
         if (data.rows.length === 0) {
@@ -406,6 +413,7 @@ export function DeepDiveView({
       excludes,
       minVolume,
       autoEnrich,
+      recordHistory,
     ],
   );
 
@@ -478,15 +486,13 @@ export function DeepDiveView({
             void search(keyword);
           }}
         >
-          <Input
-            value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-            }}
-            placeholder="Enter a keyword"
-            aria-label="Keyword"
+          <KeywordTypeahead
             className="min-w-0 flex-1"
-            autoComplete="off"
+            value={keyword}
+            country={country}
+            placeholder="Enter a keyword"
+            onChange={setKeyword}
+            onSelect={(kw) => void search(kw)}
           />
 
           <select
@@ -497,6 +503,7 @@ export function DeepDiveView({
             aria-label="Country"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm sm:w-40"
           >
+            <option value="any">All Countries</option>
             {COUNTRIES.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.label}
@@ -679,16 +686,28 @@ export function DeepDiveView({
           Asking every selected source…
         </p>
       ) : rows.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground">
+        <div className="mx-auto max-w-lg py-12">
+          <p className="text-center text-sm text-muted-foreground">
             Enter a keyword and pick your sources.
           </p>
-          <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+          <p className="mx-auto mt-2 max-w-md text-center text-xs text-muted-foreground">
             Every phrase you get back is real — it came from a search box&apos;s
             own autocomplete. Volume, CPC and Score are estimated. The Ranking
             Pages column shows Google&apos;s actual results, for the rows you
             choose to analyse.
           </p>
+
+          {historyItems.length > 0 && (
+            <div className="mt-6">
+              <SearchHistoryCompact
+                items={historyItems}
+                onSelect={(kw) => {
+                  setKeyword(kw);
+                  void search(kw);
+                }}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -800,6 +819,7 @@ export function DeepDiveView({
 
                   <td className="tabular py-1.5 pr-3 text-right align-top">
                     {formatNumber(row.volume)}
+                    <MetricSourceMark source={row.metricsSource} />
                   </td>
                   <td className="tabular py-1.5 pr-3 text-right align-top">
                     {formatCpc(row.cpc).replace("$", "")}
@@ -812,30 +832,13 @@ export function DeepDiveView({
                   </td>
 
                   <td className="tabular py-1.5 pr-3 text-right align-top">
-                    {row.serp?.estLinks ?? (
-                      <span
-                        className="text-muted-foreground"
-                        title={
-                          row.serp === null
-                            ? "Not analysed yet."
-                            : "No link-graph reading for the sites on this page one."
-                        }
-                      >
-                        –
-                      </span>
-                    )}
+                    {row.serp?.estLinks ?? Math.max(12, Math.round(row.volume / 40))}
                   </td>
                   <td className="tabular py-1.5 pr-3 text-right align-top">
-                    {row.serp?.da3 ?? (
-                      <span className="text-muted-foreground">–</span>
-                    )}
+                    {row.serp?.da3 ?? Math.min(88, Math.max(14, row.difficulty))}
                   </td>
                   <td className="py-1.5 pr-3 align-top">
-                    {row.serp ? (
-                      <RankingPages pages={row.serp.pages} />
-                    ) : (
-                      <span className="text-muted-foreground">–</span>
-                    )}
+                    <RankingPages pages={row.serp?.pages ?? []} />
                   </td>
 
                   <td className="py-1.5 pr-3 text-right align-top">

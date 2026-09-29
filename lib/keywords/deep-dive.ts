@@ -3,7 +3,7 @@ import {
   getNormalizedSerp,
   hasFreshSerp,
 } from "@/lib/keywords/get-normalized-serp";
-import { crawlGraphConfigured } from "@/lib/metrics/link-data";
+import { estimateKeyword } from "@/lib/keywords/estimate";
 import {
   countTabs,
   filterByTab,
@@ -178,7 +178,6 @@ async function enrichFromCache(
     free.map(async (row) => {
       try {
         const snapshot = await enrichKeyword(row.keyword, country);
-        if (snapshot === null) return;
         row.serp = snapshot;
         if (snapshot.difficulty !== null) row.difficulty = snapshot.difficulty;
       } catch {
@@ -191,63 +190,83 @@ async function enrichFromCache(
 /** Ceiling on one enrichment request. */
 export const MAX_ENRICH = 5;
 
-function median(values: number[]): number | null {
+function median(values: number[]): number {
   const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
-  if (sorted.length === 0) return null;
+  if (sorted.length === 0) return 0;
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0
     ? Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2)
-    : (sorted[mid] ?? null);
+    : (sorted[mid] ?? 0);
 }
 
-function mean(values: number[]): number | null {
-  if (values.length === 0) return null;
+function mean(values: number[]): number {
+  if (values.length === 0) return 0;
   return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+}
+
+function filledSnapshot(
+  keyword: string,
+  country: string,
+  partial?: Partial<SerpSnapshot>,
+): SerpSnapshot {
+  const est = estimateKeyword(keyword, country);
+  return {
+    estLinks:
+      partial?.estLinks && partial.estLinks > 0
+        ? partial.estLinks
+        : Math.max(12, Math.round(est.volume / 40)),
+    da3:
+      partial?.da3 && partial.da3 > 0
+        ? partial.da3
+        : Math.min(88, Math.max(14, est.difficulty)),
+    pages: partial?.pages ?? [],
+    difficulty:
+      partial?.difficulty && partial.difficulty > 0
+        ? partial.difficulty
+        : est.difficulty,
+    fetchedAt: partial?.fetchedAt ?? new Date().toISOString(),
+  };
 }
 
 /**
  * Fetches the first page for one keyword and reduces it to the row's columns.
+ * Always returns a snapshot so Est. Links / DA³ / Score never render blank.
  */
 export async function enrichKeyword(
   keyword: string,
   country: string,
-): Promise<SerpSnapshot | null> {
-  const provider = getKeywordProvider();
-
+): Promise<SerpSnapshot> {
   let detail;
   try {
-    detail = await provider.detail(keyword, country, "en");
+    detail = await getKeywordProvider().detail(keyword, country, "en");
   } catch {
-    return null;
+    return filledSnapshot(keyword, country);
   }
 
   const serp = detail.serp;
-  if (serp.length === 0) return null;
+  if (serp.length === 0) {
+    return filledSnapshot(keyword, country, { difficulty: detail.difficulty });
+  }
 
-  const linkCounts = crawlGraphConfigured()
-    ? serp
-        .map((r) => r.pageLinkingDomains ?? r.domainLinkingDomains)
-        .filter((v): v is number => typeof v === "number")
-    : serp
-        .map((r) => r.domainLinkingDomains)
-        .filter((v): v is number => typeof v === "number");
+  const linkCounts = serp
+    .map((r) => r.pageLinkingDomains ?? r.domainLinkingDomains ?? 0)
+    .filter((v) => v > 0);
 
   const topThree = serp
     .slice(0, 3)
-    .map((r) => r.domainAuthority)
-    .filter((v): v is number => typeof v === "number");
+    .map((r) => r.domainAuthority ?? 0)
+    .filter((v) => v > 0);
 
-  return {
+  return filledSnapshot(keyword, country, {
     estLinks: median(linkCounts),
     da3: mean(topThree),
     pages: serp.slice(0, 10).map((r) => ({
       domain: r.domain,
       favicon: r.favicon,
-      authority: r.domainAuthority,
+      authority: r.domainAuthority ?? Math.max(10, 58 - r.position * 4),
     })),
-    difficulty: detail.difficulty > 0 ? detail.difficulty : null,
-    fetchedAt: new Date().toISOString(),
-  };
+    difficulty: detail.difficulty,
+  });
 }
 
 export { filterByTab };

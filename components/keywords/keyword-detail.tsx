@@ -1,6 +1,7 @@
 import { ArrowLeft, ExternalLink, Link2 } from "lucide-react";
 import Link from "next/link";
 
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import { KeywordCard } from "@/components/keywords/keyword-card";
 import { TrendChart } from "@/components/keywords/trend-chart";
 import { Badge } from "@/components/ui/badge";
@@ -21,17 +22,20 @@ function Metric({
   value,
   sub,
   className,
+  source,
 }: {
   label: string;
   value: string;
   sub?: string;
   className?: string;
+  source?: "live" | "estimated";
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className={`tabular mt-1 text-2xl font-semibold ${className ?? ""}`}>
         {value}
+        {source ? <MetricSourceMark source={source} /> : null}
       </p>
       {sub !== undefined && (
         <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
@@ -75,6 +79,7 @@ export function KeywordDetailView({
           label="Monthly searches"
           value={formatVolume(detail.volume)}
           sub={`${formatNumber(detail.volume)} per month`}
+          source={detail.metricsSource}
         />
         <Metric
           label="Difficulty"
@@ -148,7 +153,7 @@ export function KeywordDetailView({
                     <Link2 className="ml-auto size-3" />
                   </dt>
                   <dd className="tabular text-sm font-medium">
-                    {r.backlinks === null ? "N/A" : formatVolume(r.backlinks)}
+                    {formatVolume(r.backlinks ?? 0)}
                   </dd>
                 </div>
                 <div>

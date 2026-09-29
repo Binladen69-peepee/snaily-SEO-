@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { alertCopy, type RankAlertRow } from "@/lib/alerts-logic";
 import { downloadCsv } from "@/lib/keywords/csv";
 import { formatVolume } from "@/lib/keywords/format";
 import { ENGINES, type TrackedRow, type TrackerSummary } from "@/lib/rank-tracker";
@@ -242,12 +244,14 @@ export function RankTrackerView({
   domain,
   discovered,
   searchConsoleReady,
+  alerts = [],
 }: {
   initial: TrackedRow[];
   projectId: string;
   domain: string;
   discovered: { keyword: string; position: number; impressions: number }[];
   searchConsoleReady: boolean;
+  alerts?: RankAlertRow[];
 }) {
   const [rows, setRows] = useState(initial);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -419,6 +423,17 @@ export function RankTrackerView({
 
   return (
     <div className="space-y-4">
+      {alerts.length > 0 && (
+        <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
+          <p className="mb-1.5 font-medium">Recent rank movement</p>
+          <ul className="space-y-1 text-muted-foreground">
+            {alerts.slice(0, 5).map((a) => (
+              <li key={a.id}>{alertCopy(a)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ---------- Domain header ---------- */}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-auto text-xl font-semibold tracking-tight">{domain}</h1>
@@ -695,6 +710,7 @@ export function RankTrackerView({
                       </td>
                       <td className="tabular px-3 py-2.5 text-right">
                         {formatVolume(r.volume)}
+                        <MetricSourceMark source="estimated" />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
                         {r.checkedAt === null

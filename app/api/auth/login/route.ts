@@ -2,9 +2,23 @@ import { NextResponse } from "next/server";
 
 import { createSession, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { clientIp } from "@/lib/security/client-ip";
+import { rateLimitDurable } from "@/lib/security/rate-limit-db";
+import { rateLimitHeaders } from "@/lib/security/rate-limit";
 import { loginSchema } from "@/lib/validation";
 
+const LOGIN_LIMIT = 8;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+
 export async function POST(req: Request) {
+  const limited = await rateLimitDurable(`login:${clientIp(req)}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again in a few minutes." },
+      { status: 429, headers: rateLimitHeaders(limited, LOGIN_LIMIT) },
+    );
+  }
+
   const body: unknown = await req.json();
   const parsed = loginSchema.safeParse(body);
 

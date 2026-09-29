@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ScorePill } from "@/components/difficulty";
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import type { Row } from "@/components/keywords/bulk-table";
 import { useKeywordToolbar } from "@/components/keywords/toolbar";
 import { formatCpc, formatNumber } from "@/lib/keywords/format";
@@ -192,6 +193,7 @@ export function KeywordTable({
 
             <td className="tabular py-1.5 pr-3 text-right">
               {formatNumber(k.volume)}
+              <MetricSourceMark source={k.metricsSource} />
             </td>
             <td className="tabular py-1.5 pr-3 text-right">
               {formatCpc(k.cpc).replace("$", "")}

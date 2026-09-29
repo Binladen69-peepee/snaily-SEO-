@@ -1,3 +1,6 @@
+import { assertPublicUrl } from "@/lib/security/assert-public-url";
+import { assertHttpUrl } from "@/lib/security/private-host";
+
 const TIMEOUT_MS = 12_000;
 const USER_AGENT = "SnailySEO/1.0 (+technical check)";
 
@@ -55,8 +58,33 @@ function countSitemapUrls(xml: string): number {
   return (xml.match(/<loc>/gi) ?? []).length;
 }
 
+function emptyResult(origin: string): TechnicalSeoResult {
+  return {
+    origin,
+    robots: {
+      found: false,
+      status: 0,
+      hasSitemap: false,
+      sitemapUrl: null,
+      disallowRules: 0,
+      blocksAll: false,
+    },
+    sitemap: {
+      found: false,
+      status: 0,
+      url: null,
+      urlCount: 0,
+    },
+  };
+}
+
 export async function checkTechnicalSeo(siteUrl: string): Promise<TechnicalSeoResult> {
-  const origin = new URL(siteUrl).origin;
+  let origin: string;
+  try {
+    origin = (await assertPublicUrl(siteUrl)).origin;
+  } catch {
+    return emptyResult("");
+  }
 
   const robotsRes = await fetchText(`${origin}/robots.txt`);
   const robotsParsed =
@@ -67,16 +95,28 @@ export async function checkTechnicalSeo(siteUrl: string): Promise<TechnicalSeoRe
     `${origin}/sitemap.xml`,
     `${origin}/sitemap_index.xml`,
     `${origin}/wp-sitemap.xml`,
-  ].filter((u): u is string => u !== null && u !== "");
+  ].filter((u): u is string => {
+    if (u === null || u === "") return false;
+    try {
+      assertHttpUrl(u);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  const uniqueCandidates = [...new Set(sitemapCandidates)];
+  const sitemapResults = await Promise.all(uniqueCandidates.map((u) => fetchText(u)));
 
   let sitemapFound = false;
   let sitemapStatus = 0;
   let sitemapUrl: string | null = null;
   let urlCount = 0;
 
-  for (const candidate of [...new Set(sitemapCandidates)]) {
-    const res = await fetchText(candidate);
-    if (res.status === 200 && res.text.includes("<")) {
+  for (let i = 0; i < uniqueCandidates.length; i += 1) {
+    const candidate = uniqueCandidates[i];
+    const res = sitemapResults[i];
+    if (candidate && res && res.status === 200 && res.text.includes("<")) {
       sitemapFound = true;
       sitemapStatus = res.status;
       sitemapUrl = candidate;

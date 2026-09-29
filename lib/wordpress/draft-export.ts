@@ -170,7 +170,7 @@ export type ExportArticle = {
  */
 export async function buildExport(
   article: ExportArticle,
-  opts: { update?: boolean } = {},
+  opts: { forceNew?: boolean } = {},
 ): Promise<ExportPlan> {
   const template: ResolvedTemplate = await resolveTemplate(article.projectId);
   const meta = parseEditorial(article.editorial);
@@ -280,6 +280,14 @@ export async function buildExport(
      */
     categories: doc.categories,
     tags: meta.tags,
+    /*
+     * The site's own duplicate guard. The connector binds the draft it creates
+     * to this id, and a create for an article it already holds a draft for
+     * updates that draft instead. It is the only guard that still works when
+     * the request is repeated below the app — by a proxy, or by the connector
+     * client's own fallback to the second URL shape.
+     */
+    articleId: article.id,
     ...(recipe === null ? {} : { recipe }),
     // Deliberately no featuredMedia: images are the client's own workflow.
   };
@@ -301,8 +309,21 @@ export async function buildExport(
       relatedIds: related,
     },
     recipe,
+    /*
+     * An article that has been exported before is exported *back into the same
+     * draft*, and that is the default rather than a flag the caller opts into.
+     *
+     * It used to be the other way round: the browser told the server whether
+     * this was an update, from React state seeded at page load. Every way that
+     * state could be wrong — a reload between exporting and exporting again, a
+     * second tab, a response that never arrived because the invocation hit its
+     * 60-second ceiling after the draft was already created — ended in a second
+     * draft of the same recipe, and the author had no way to tell which of the
+     * two was the real one. The article row knows what was exported; the
+     * browser only remembers. So the row decides.
+     */
     targetPostId:
-      opts.update === true && article.wpDraftId !== null && article.wpDraftId > 0
+      opts.forceNew !== true && article.wpDraftId !== null && article.wpDraftId > 0
         ? article.wpDraftId
         : null,
     meta,
@@ -313,6 +334,8 @@ export type ExportResult = {
   id: number;
   editLink: string;
   updated: boolean;
+  /** True when the *site* recognised a repeat and reused its existing draft. */
+  deduped: boolean;
   plan: ExportPlan;
   /** What the site says it did with the WP Recipe Maker card. */
   recipe: WpRecipeReport;
@@ -345,10 +368,24 @@ export async function sendExport(
         plan.targetPostId,
         plan.payload,
       );
-      return { ...updated, updated: true, plan };
+      return { ...updated, updated: true, deduped: false, plan };
     } catch (err) {
+      /*
+       * Which update failures may fall through to creating a draft.
+       *
+       * Two, and only two: a connector too old to have the update route, and a
+       * draft the author has since published, which the plugin refuses to
+       * touch. Both mean the target does not exist as something we may write
+       * to, so a new draft is the author's work landing somewhere rather than
+       * a duplicate of something that is still there.
+       *
+       * An indeterminate failure — the site took the update and never answered
+       * — is explicitly not recoverable here. Creating a draft after one would
+       * leave two, which is the bug this whole path exists to prevent.
+       */
       const recoverable =
         err instanceof WordPressError &&
+        err.kind !== "indeterminate" &&
         (err.kind === "route_missing" ||
           /only update drafts|not_a_draft/i.test(err.message));
       if (!recoverable) throw err;
@@ -356,7 +393,12 @@ export async function sendExport(
   }
 
   const created = await createDraft(creds.siteUrl, creds.token, plan.payload);
-  return { ...created, updated: false, plan };
+  /*
+   * `deduped` means the site recognised the article and handed back the draft
+   * it already had. From the author's point of view that is an update, and
+   * saying "created" would be a lie about a post that is older than this click.
+   */
+  return { ...created, updated: created.deduped, plan };
 }
 
 /** Persisted so the editor can show what happened without re-running the map. */

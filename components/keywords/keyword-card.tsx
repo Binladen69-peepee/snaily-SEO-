@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import { Badge } from "@/components/ui/badge";
 import {
   difficultyBand,
@@ -77,6 +78,7 @@ export function KeywordCard({
           <p className="text-xs text-muted-foreground">Volume</p>
           <p className="tabular text-lg font-semibold">
             {formatVolume(keyword.volume)}
+            <MetricSourceMark source={keyword.metricsSource} />
           </p>
         </div>
 

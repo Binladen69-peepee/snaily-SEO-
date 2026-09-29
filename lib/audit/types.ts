@@ -47,6 +47,8 @@ export type CrawledPage = {
   imagesDecorative: number;
   /** Images belonging to site furniture rather than this page's content. */
   imagesChrome: number;
+  /** Full visible body text. Only populated for single-page analysis. */
+  bodyText?: string;
   internalLinks: string[];
   brokenLinks: string[];
   /** Links the host refused to serve the crawler, or that timed out. */

@@ -80,3 +80,4 @@ poll-tmp.mjs
 .env.production
 .env.*.local
 .vercel-prod.env.local
+.env*

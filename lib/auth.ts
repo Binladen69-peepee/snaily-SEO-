@@ -2,12 +2,14 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
+import { prisma } from "@/lib/db";
+
 const SECRET = process.env.AUTH_SECRET;
 if (!SECRET) throw new Error("AUTH_SECRET is not set in .env.local");
 
 const key = new TextEncoder().encode(SECRET);
 const COOKIE = "session";
-const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 /**
  * Impersonated sessions expire far sooner than a login.
@@ -32,6 +34,7 @@ export type Session = {
   impersonatorId?: string;
   impersonatorName?: string;
   impersonatorEmail?: string;
+  sessionVersion?: number;
 };
 
 /** True when this session is an owner acting as another account. */
@@ -51,7 +54,20 @@ export async function createSession(session: Session) {
   // An impersonated token must not outlive the support task it was made for.
   const maxAge = isImpersonating(session) ? IMPERSONATION_MAX_AGE : MAX_AGE;
 
-  const token = await new SignJWT(session)
+  let sessionVersion = session.sessionVersion;
+  if (sessionVersion === undefined) {
+    try {
+      const row = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { sessionVersion: true },
+      });
+      sessionVersion = row?.sessionVersion ?? 1;
+    } catch {
+      sessionVersion = 1;
+    }
+  }
+
+  const token = await new SignJWT({ ...session, sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${maxAge}s`)
@@ -76,10 +92,25 @@ export async function getSession(): Promise<Session | null> {
     const impersonatorId =
       typeof payload.impersonatorId === "string" ? payload.impersonatorId : undefined;
 
+    const sessionVersion =
+      typeof payload.sessionVersion === "number" ? payload.sessionVersion : 1;
+    const userId = payload.userId as string;
+
+    try {
+      const row = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { sessionVersion: true },
+      });
+      if (row && row.sessionVersion !== sessionVersion) return null;
+    } catch {
+      /* sessionVersion column missing until migrate — accept the token */
+    }
+
     return {
-      userId: payload.userId as string,
+      userId,
       email: payload.email as string,
       name: payload.name as string,
+      sessionVersion,
       impersonatorId,
       impersonatorName:
         typeof payload.impersonatorName === "string" ? payload.impersonatorName : undefined,
@@ -93,4 +124,16 @@ export async function getSession(): Promise<Session | null> {
 
 export async function destroySession() {
   (await cookies()).delete(COOKIE);
+}
+
+/** Invalidates every JWT issued before this call. */
+export async function bumpSessionVersion(userId: string): Promise<void> {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { sessionVersion: { increment: 1 } },
+    });
+  } catch {
+    /* ignore until migrate */
+  }
 }

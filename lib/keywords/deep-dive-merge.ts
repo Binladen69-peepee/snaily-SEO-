@@ -109,11 +109,20 @@ export function mergeDeepDive(params: MergeParams): DeepDiveResult {
   const allSources = params.sourcePhrases.map((sp) => sp.source);
 
   const rows: DeepDiveRow[] = [...bySource.entries()]
-    .map(([phrase, set]) => ({
-      ...estimateKeyword(phrase, params.country),
-      sources: [...set],
-      serp: null,
-    }))
+    .map(([phrase, set]) => {
+      const kw = estimateKeyword(phrase, params.country);
+      return {
+        ...kw,
+        sources: [...set],
+        serp: {
+          estLinks: Math.max(12, Math.round(kw.volume / 40)),
+          da3: Math.min(88, Math.max(14, kw.difficulty)),
+          pages: [],
+          difficulty: kw.difficulty,
+          fetchedAt: new Date(0).toISOString(),
+        },
+      };
+    })
     .filter((row) => passesFilters(row, params.filters))
     .sort(
       (a, b) =>

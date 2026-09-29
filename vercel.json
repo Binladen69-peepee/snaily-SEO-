@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/draft-jobs",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/rank-check",
+      "schedule": "30 4 * * *"
     }
   ]
 }

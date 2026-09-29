@@ -2,7 +2,7 @@
 
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { KeywordTypeahead } from "@/components/keywords/keyword-typeahead";
@@ -11,6 +11,7 @@ import {
   SEARCH_MODE_LABEL,
   SEARCH_MODES,
 } from "@/lib/keywords/types";
+import { useSearchHistory } from "@/lib/keywords/use-search-history";
 
 const SELECT_CLASS =
   "h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -26,22 +27,26 @@ export function SearchForm({
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
+  const { record: recordHistory } = useSearchHistory();
 
   const [keyword, setKeyword] = useState(params.get("q") ?? "");
   const [country, setCountry] = useState(params.get("country") ?? "us");
   const [mode, setMode] = useState(params.get("mode") ?? "related");
 
   /** One path for both a typed Enter and a chosen suggestion. */
-  function search(raw: string) {
-    const q = raw.trim();
-    if (q === "") return;
+  const search = useCallback(
+    (raw: string) => {
+      const q = raw.trim();
+      if (q === "") return;
 
-    // A new search resets filters and pagination. Stays on the current tool —
-    // searching from Brainstorm should brainstorm, not jump to Research.
-    const next = new URLSearchParams({ q, country });
-    if (showMode && mode !== "related") next.set("mode", mode);
-    router.push(`${pathname}?${next.toString()}`);
-  }
+      recordHistory(q, country, 0);
+
+      const next = new URLSearchParams({ q, country });
+      if (showMode && mode !== "related") next.set("mode", mode);
+      router.push(`${pathname}?${next.toString()}`);
+    },
+    [country, mode, showMode, pathname, router, recordHistory],
+  );
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -50,11 +55,6 @@ export function SearchForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
-      {/*
-        The typeahead owns its own input and search icon. Enter searches what
-        is typed; arrow keys walk the suggestions and Enter takes the
-        highlighted one — both land in the same search().
-      */}
       <KeywordTypeahead
         className="flex-1"
         value={keyword}
@@ -72,6 +72,7 @@ export function SearchForm({
         aria-label="Location"
         className={SELECT_CLASS}
       >
+        <option value="any">All Countries</option>
         {COUNTRIES.map((c) => (
           <option key={c.code} value={c.code}>
             {c.label}

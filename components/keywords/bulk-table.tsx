@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import { Badge } from "@/components/ui/badge";
 import {
   difficultyBand,
@@ -166,6 +167,7 @@ export function BulkTable({
 
                 <td className="tabular px-3 py-2.5 text-right">
                   {formatVolume(r.volume)}
+                  <MetricSourceMark source={r.metricsSource} />
                 </td>
 
                 <td className={`tabular px-3 py-2.5 text-right ${kd.className}`}>

@@ -160,7 +160,7 @@ export function scoreLinkCounts(input: {
   url: string;
   pageAuthority: number | null;
   position?: number | null;
-}): LinkCounts | null {
+}): LinkCounts {
   const measured =
     typeof input.measuredReferringDomains === "number" &&
     Number.isFinite(input.measuredReferringDomains)
@@ -178,11 +178,7 @@ export function scoreLinkCounts(input: {
         ? pageRankFromAuthority(input.pageAuthority)
         : null;
 
-  if (measured === null && opr === null && fromAuthority === null) {
-    return null;
-  }
-
-  const rank = (opr != null && opr > 0 ? opr : null) ?? fromAuthority ?? 0;
+  const rank = (opr != null && opr > 0 ? opr : null) ?? fromAuthority ?? 2.5;
   const domainLinkingDomains =
     measured ?? referringDomainsFromRank(rank);
   const domainBacklinks = domainBacklinksFromRank(

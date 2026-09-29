@@ -1,15 +1,17 @@
-import { prisma } from "@/lib/db";
+import { recordRankMovement } from "@/lib/alerts";
+import { reportError } from "@/lib/errors";
 import { dataForSeoConfigured } from "@/lib/dataforseo/config";
+import { prisma } from "@/lib/db";
 import { estimateKeyword } from "@/lib/keywords/estimate";
+import { hydrateKeywords, keywordMap } from "@/lib/keywords/hydrate";
 import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
 import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
 
 /**
- * Rank tracking.
- *
  * Positions are measured against the live SERP (DataForSEO primary, SerpApi
  * fallback). Search Console averages remain available as a free secondary
- * signal where imported.
+ * signal where imported. A nightly cron samples a small batch; full checks
+ * stay on the Rank Tracker page.
  */
 
 export const ENGINES = [
@@ -155,7 +157,7 @@ function findDomain(
  * Measures live positions for a set of tracked keywords and records them.
  *
  * Each keyword is one SERP lookup (DataForSEO primary). Cached SERPs cost
- * nothing. Caller decides when to spend — nothing here runs on a schedule.
+ * nothing. Caller decides when to spend.
  */
 export async function checkRanks(
   keywordIds: string[],
@@ -177,17 +179,38 @@ export async function checkRanks(
   let ranked = 0;
 
   for (const k of keywords) {
+    const previous = await prisma.rankSnapshot.findFirst({
+      where: { keywordId: k.id },
+      orderBy: { checkedAt: "desc" },
+      select: { rank: true },
+    });
+
     let found: { rank: number; url: string } | null = null;
     try {
+      /*
+       * Use the engine's mapped country when present, otherwise fall back to
+       * the keyword's stored country. Location (city/region) is passed through
+       * for providers that support localised SERPs (DataForSEO does).
+       */
+      const engineEntry = ENGINES.find((e) => e.value === k.engine);
+      const serpCountry = engineEntry?.country ?? k.country;
+
       const serp = await getNormalizedSerp({
         keyword: k.keyword,
-        country: k.country,
+        country: serpCountry,
+        location: k.location ?? undefined,
         depth: MAX_RANK,
         preferProvider: "dataforseo",
       });
       found = findDomain(serp.organicResults, domain);
-    } catch {
-      // One bad keyword must not abandon the rest of the batch.
+    } catch (err) {
+      await reportError({
+        route: "rank-check",
+        message:
+          err instanceof Error
+            ? `Rank check failed for "${k.keyword}": ${err.message}`
+            : `Rank check failed for "${k.keyword}"`,
+      });
       continue;
     }
 
@@ -200,10 +223,64 @@ export async function checkRanks(
       },
     });
 
+    await recordRankMovement({
+      projectId: k.projectId,
+      userId: k.userId,
+      keywordId: k.id,
+      keyword: k.keyword,
+      previousRank: previous?.rank ?? null,
+      currentRank: found?.rank ?? null,
+    });
+
     if (found !== null) ranked++;
   }
 
   return { checked: keywords.length, ranked };
+}
+
+/** Hobby 60s + DFS cost: one cron run only samples a handful. */
+const MAX_CRON_CHECKS = 8;
+
+/**
+ * Tracked keywords that have not had a live SERP snapshot today, oldest first.
+ */
+export async function pickKeywordsDueForCheck(): Promise<
+  { projectId: string; url: string; ids: string[] }[]
+> {
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+
+  const projects = await prisma.project.findMany({
+    select: { id: true, url: true },
+    take: 20,
+  });
+
+  const batches: { projectId: string; url: string; ids: string[] }[] = [];
+  let remaining = MAX_CRON_CHECKS;
+
+  for (const project of projects) {
+    if (remaining <= 0) break;
+    const due = await prisma.trackedKeyword.findMany({
+      where: {
+        projectId: project.id,
+        snapshots: {
+          none: { checkedAt: { gte: since }, source: "serp" },
+        },
+      },
+      select: { id: true },
+      take: remaining,
+      orderBy: { updatedAt: "asc" },
+    });
+    if (due.length === 0) continue;
+    batches.push({
+      projectId: project.id,
+      url: project.url,
+      ids: due.map((d) => d.id),
+    });
+    remaining -= due.length;
+  }
+
+  return batches;
 }
 
 /**
@@ -230,8 +307,9 @@ export async function addKeywords(
   ];
 
   let added = 0;
+  const live = keywordMap(await hydrateKeywords(clean, country));
   for (const keyword of clean) {
-    const est = estimateKeyword(keyword, country);
+    const est = live.get(keyword) ?? estimateKeyword(keyword, country);
     try {
       await prisma.trackedKeyword.create({
         data: {

@@ -16,7 +16,7 @@ import { buildZip } from "@/lib/wordpress/zip";
  * plugin route has a self-check that the emitted source still parses.
  */
 
-export const PLUGIN_VERSION = "1.5.0";
+export const PLUGIN_VERSION = "1.6.0";
 export const PLUGIN_SLUG = "snaily-seo-connector";
 
 /** REST namespace the app talks to. Must match `SNAILY_SEO_NS` below. */
@@ -51,6 +51,19 @@ define('SNAILY_SEO_VERSION', '${PLUGIN_VERSION}');
 define('SNAILY_SEO_OPTION', 'snaily_seo_token');
 define('SNAILY_SEO_AUTHOR_OPTION', 'snaily_seo_author');
 define('SNAILY_SEO_NS', '${PLUGIN_NAMESPACE}');
+
+/**
+ * Post meta binding a WordPress draft to the Drafter article it came from.
+ *
+ * This is what makes an export idempotent from the site's side. The app tries
+ * hard not to ask for a second draft of the same article, but it cannot see
+ * everything: a request that timed out after WordPress had already inserted
+ * the post looks identical, from the app, to one that never arrived. So the
+ * site remembers which article each draft belongs to, and a create for an
+ * article it already holds a draft for updates that draft instead of stacking
+ * another one beside it.
+ */
+define('SNAILY_SEO_ARTICLE_META', '_snaily_article');
 
 /* ---------------------------------------------------------------------------
  * Token
@@ -517,6 +530,62 @@ function snaily_seo_posts(WP_REST_Request $request) {
     );
 }
 
+/* ---------------------------------------------------------------------------
+ * Article binding
+ * ------------------------------------------------------------------------ */
+
+/** The Drafter article id on this request, or '' when the caller sent none. */
+function snaily_seo_article_key(WP_REST_Request $request) {
+    $raw = (string) $request->get_param('article_id');
+    // Drafter ids are cuids. Anything else is not one, and is not going into a
+    // meta_query as-is.
+    if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $raw)) {
+        return '';
+    }
+    return $raw;
+}
+
+/**
+ * The draft already bound to this article, or 0.
+ *
+ * Deliberately narrow: post type 'post', status exactly 'draft'. A published
+ * post or one in the trash is not something a re-export may touch, so it does
+ * not count as a match and a new draft is made instead.
+ */
+function snaily_seo_bound_draft($article) {
+    if ($article === '') {
+        return 0;
+    }
+
+    $found = get_posts(array(
+        'post_type'        => 'post',
+        'post_status'      => 'draft',
+        'posts_per_page'   => 1,
+        'orderby'          => 'ID',
+        'order'            => 'DESC',
+        'fields'           => 'ids',
+        'no_found_rows'    => true,
+        'suppress_filters' => true,
+        'meta_key'         => SNAILY_SEO_ARTICLE_META,
+        'meta_value'       => $article,
+    ));
+
+    return empty($found) ? 0 : (int) $found[0];
+}
+
+/**
+ * Records which article a draft came from.
+ *
+ * Also written on update, so drafts exported before this existed get bound the
+ * first time the author re-exports them rather than staying unprotected.
+ */
+function snaily_seo_bind_article($id, $article) {
+    if ($article === '' || $id <= 0) {
+        return;
+    }
+    update_post_meta($id, SNAILY_SEO_ARTICLE_META, $article);
+}
+
 /**
  * Creates a new draft. This is the only write the plugin performs.
  *
@@ -528,6 +597,33 @@ function snaily_seo_draft(WP_REST_Request $request) {
     $title = sanitize_text_field((string) $request->get_param('title'));
     if ($title === '') {
         return new WP_Error('snaily_no_title', 'A title is required.', array('status' => 400));
+    }
+
+    /*
+     * Create is an upsert, keyed on the article.
+     *
+     * The app already refuses to ask for a second draft of an article it knows
+     * it has exported. This is the case it cannot refuse: the app asked once,
+     * the request was retried somewhere below it — a proxy, the fetch retry in
+     * the connector client, a second tab — and by the time the retry arrives
+     * the first insert has already happened. Without this, the author gets two
+     * drafts of one recipe and no way to tell which is the real one.
+     *
+     * Only a draft is ever reused. A bound post the author has since published
+     * is left alone and a fresh draft is made, because the alternative is
+     * rewriting a live post, which this plugin exists to never do.
+     */
+    $article = snaily_seo_article_key($request);
+    if ($article !== '') {
+        $bound = snaily_seo_bound_draft($article);
+        if ($bound > 0) {
+            $request->set_param('id', $bound);
+            $result = snaily_seo_draft_update($request);
+            if (!is_wp_error($result) && is_array($result)) {
+                $result['deduped'] = true;
+            }
+            return $result;
+        }
     }
 
     $insert = array(
@@ -550,6 +646,7 @@ function snaily_seo_draft(WP_REST_Request $request) {
         return $id;
     }
 
+    snaily_seo_bind_article((int) $id, $article);
     snaily_seo_write_seo_meta((int) $id, $request);
     snaily_seo_apply_draft_extras((int) $id, $request);
     snaily_seo_write_primary_category((int) $id, $request);
@@ -567,10 +664,11 @@ function snaily_seo_draft(WP_REST_Request $request) {
     }
 
     return array(
-        'id'     => (int) $id,
-        'status' => 'draft',
-        'recipe' => $recipe,
-        'seo'    => snaily_seo_meta((int) $id),
+        'id'      => (int) $id,
+        'status'  => 'draft',
+        'deduped' => false,
+        'recipe'  => $recipe,
+        'seo'     => snaily_seo_meta((int) $id),
         // Built by hand rather than with get_edit_post_link(): that checks
         // current_user_can(), and a token-authenticated request has no logged-in
         // user, so it would always return null here.
@@ -1046,6 +1144,7 @@ function snaily_seo_draft_update(WP_REST_Request $request) {
         return $updated;
     }
 
+    snaily_seo_bind_article($id, snaily_seo_article_key($request));
     snaily_seo_write_seo_meta($id, $request);
     snaily_seo_apply_draft_extras($id, $request);
     snaily_seo_write_primary_category($id, $request);

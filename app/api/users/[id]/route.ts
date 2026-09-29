@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getSession, hashPassword } from "@/lib/auth";
+import { bumpSessionVersion, createSession, getSession, hashPassword } from "@/lib/auth";
 import { isValidId, prisma } from "@/lib/db";
 import { isOwner } from "@/lib/users";
 
@@ -81,6 +81,16 @@ export async function PATCH(req: Request, { params }: Params) {
       },
       select: { id: true, name: true, email: true, role: true },
     });
+    if (passwordHash) {
+      await bumpSessionVersion(id);
+      if (session.userId === id) {
+        await createSession({
+          userId: updated.id,
+          email: updated.email,
+          name: updated.name,
+        });
+      }
+    }
     return NextResponse.json({ ok: true, user: updated });
   } catch {
     // The only realistic failure is the unique email constraint.

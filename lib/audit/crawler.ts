@@ -1,6 +1,8 @@
 import * as cheerio from "cheerio";
 
 import { auditImages } from "@/lib/audit/images";
+import { assertPublicUrl } from "@/lib/security/assert-public-url";
+import { isBlockedHostname } from "@/lib/security/private-host";
 import {
   classifyFailure,
   classifyResponse,
@@ -53,27 +55,61 @@ function retryAfterMs(header: string | null): number {
   return Number.isNaN(when) ? 0 : Math.max(0, when - Date.now());
 }
 
-/**
- * Blocks private / loopback / link-local hosts so a crawl can't hit internal
- * services. Set ALLOW_PRIVATE_CRAWL=1 to audit a local site on a self-hosted
- * install where you control every project.
- */
 function isPrivateHost(hostname: string): boolean {
   if (process.env.ALLOW_PRIVATE_CRAWL === "1") return false;
+  return isBlockedHostname(hostname);
+}
 
-  const h = hostname.toLowerCase();
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) {
-    return true;
+function blockedOutcome(url: string): LinkOutcome {
+  return {
+    state: "blocked",
+    status: 0,
+    finalUrl: url,
+    redirected: false,
+    detail: "This host cannot be fetched.",
+  };
+}
+
+/** Follows redirects only onto public hosts so a 302 cannot SSRF into RFC1918. */
+async function fetchFollowingPublicRedirects(
+  url: string,
+  userAgent: string,
+  signal: AbortSignal,
+): Promise<Response | LinkOutcome> {
+  let current = url;
+  for (let hop = 0; hop < 5; hop += 1) {
+    let parsed: URL;
+    try {
+      parsed = new URL(current);
+    } catch {
+      return blockedOutcome(url);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return blockedOutcome(url);
+    }
+    if (isPrivateHost(parsed.hostname)) {
+      return blockedOutcome(url);
+    }
+
+    const response = await fetch(current, {
+      signal,
+      redirect: "manual",
+      headers: { "User-Agent": userAgent },
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (location === null || location === "") {
+        return response;
+      }
+      current = new URL(location, current).toString();
+      continue;
+    }
+
+    return response;
   }
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
-    const [a, b] = h.split(".").map(Number) as [number, number];
-    if (a === 10 || a === 127 || a === 0) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
-  }
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd")) return true;
-  return false;
+
+  return blockedOutcome(url);
 }
 
 /** Strips the fragment and trailing slash so the same page isn't crawled twice. */
@@ -130,6 +166,14 @@ type FetchedPage = Omit<
 
 /** Fetches and parses one HTML page — used by the site audit and On-Page Analyzer. */
 export async function fetchSinglePage(url: string): Promise<FetchedPage> {
+  try {
+    await assertPublicUrl(url);
+  } catch (err) {
+    const detail =
+      err instanceof Error ? err.message : "This host cannot be fetched.";
+    return blockedPage(url, detail);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
@@ -141,12 +185,8 @@ export async function fetchSinglePage(url: string): Promise<FetchedPage> {
   }
 }
 
-async function fetchPage(
-  url: string,
-  signal: AbortSignal,
-  onBlocked?: () => void,
-): Promise<FetchedPage> {
-  const empty: FetchedPage = {
+function blockedPage(url: string, detail: string): FetchedPage {
+  return {
     url,
     status: 0,
     outcome: {
@@ -154,7 +194,7 @@ async function fetchPage(
       status: 0,
       finalUrl: url,
       redirected: false,
-      detail: "Not fetched",
+      detail,
     },
     title: "",
     metaDescription: "",
@@ -170,6 +210,24 @@ async function fetchPage(
     imagesChrome: 0,
     internalLinks: [],
   };
+}
+
+async function fetchPage(
+  url: string,
+  signal: AbortSignal,
+  onBlocked?: () => void,
+): Promise<FetchedPage> {
+  const empty: FetchedPage = blockedPage(url, "Not fetched");
+
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return blockedPage(url, "Invalid URL");
+  }
+  if (isPrivateHost(target.hostname)) {
+    return blockedPage(url, "This host cannot be fetched.");
+  }
 
   /*
    * Two attempts at most: the first as the audit bot, and — only when the host
@@ -178,11 +236,7 @@ async function fetchPage(
    */
   const attempt = async (userAgent: string): Promise<Response | LinkOutcome> => {
     try {
-      return await fetch(url, {
-        signal,
-        redirect: "follow",
-        headers: { "User-Agent": userAgent },
-      });
+      return await fetchFollowingPublicRedirects(url, userAgent, signal);
     } catch (err) {
       return classifyFailure(url, err);
     }
@@ -289,6 +343,7 @@ async function fetchPage(
     imagesMissingAltSrc: imageAudit.missingAltSrc,
     imagesDecorative: imageAudit.decorative,
     imagesChrome: imageAudit.chrome,
+    bodyText: text,
     internalLinks: [...internalLinks],
     outcome,
   };
@@ -324,6 +379,11 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlOutcome> {
   const maxPages = Math.min(options.maxPages ?? CRAWL_DEFAULTS.maxPages, 500);
 
   const start = new URL(options.startUrl);
+  try {
+    await assertPublicUrl(options.startUrl);
+  } catch {
+    throw new Error("This host cannot be crawled.");
+  }
   if (isPrivateHost(start.hostname)) {
     throw new Error("This host cannot be crawled.");
   }

@@ -1966,7 +1966,6 @@ ${htmlBody}
         articleId={article.id}
         open={preflightOpen}
         onOpenChange={setPreflightOpen}
-        update={wpDraftId !== null && wpDraftId > 0}
         onGate={(reason) => {
           void refreshSnapshot();
           openWpGate(

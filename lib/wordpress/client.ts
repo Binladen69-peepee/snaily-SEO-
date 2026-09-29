@@ -18,7 +18,13 @@ export type WpErrorKind =
   | "auth"
   | "plugin_missing"
   | "route_missing"
-  | "operation";
+  | "operation"
+  /**
+   * A write whose outcome is unknown: the request went out and no answer came
+   * back. Distinct from "network" because the site may well have done the work.
+   * Nothing may be re-sent on this without first establishing what happened.
+   */
+  | "indeterminate";
 
 export class WordPressError extends Error {
   constructor(
@@ -39,6 +45,16 @@ export function isConnectivityFailure(err: unknown): boolean {
     err.kind === "plugin_missing" ||
     err.kind === "auth"
   );
+}
+
+/**
+ * True when a write may or may not have landed.
+ *
+ * The caller must not retry on this. It has to reconcile — ask the site what
+ * it actually holds — because retrying is how one export becomes two drafts.
+ */
+export function isIndeterminate(err: unknown): boolean {
+  return err instanceof WordPressError && err.kind === "indeterminate";
 }
 
 export type WpSiteInfo = {
@@ -111,6 +127,17 @@ type CallInit = {
   timeoutMs?: number;
   /** What a 404 means. Handshake uses "plugin"; extra 1.2 routes use "route". */
   missing?: "plugin" | "route";
+  /**
+   * True for a call that creates or changes something on the site.
+   *
+   * The retry loop below tries each URL shape and each token transport, which
+   * is right for a read and dangerous for a write: a request that timed out
+   * may have been carried out in full, and sending it again down the other URL
+   * is how one "Export to WordPress" click produced two drafts of the same
+   * recipe. A write therefore stops at the first failure whose outcome is
+   * unknown, and says so.
+   */
+  write?: boolean;
 };
 
 /**
@@ -159,6 +186,19 @@ function describe(status: number, body: string): string {
     .filter(Boolean)
     .join(" ");
   return detail === "" ? `HTTP ${String(status)}` : detail;
+}
+
+/**
+ * Whether a failed fetch may still have been carried out by the site.
+ *
+ * A timeout or an abort means the request went out and the answer did not come
+ * back, so the site may have done the work. A `TypeError` from fetch is a
+ * connection that was never established — wrong host, DNS failure, refused
+ * socket — and nothing reached WordPress.
+ */
+function sent(err: unknown): boolean {
+  if (!(err instanceof Error)) return true;
+  return err.name === "TimeoutError" || err.name === "AbortError";
 }
 
 async function attempt(
@@ -215,7 +255,30 @@ async function call<T>(
       let res: Response;
       try {
         res = await attempt(url, token, init, tokenInQuery);
-      } catch {
+      } catch (err) {
+        /*
+         * A write that got no answer is not a failure we may paper over.
+         *
+         * For a read, moving to the next URL shape costs nothing. For a write
+         * it is a second create: the commonest reason this throws is the
+         * 20-second timeout, and a WordPress install that takes longer than
+         * that to insert a post with a recipe card has usually inserted it.
+         * Retrying down the `?rest_route=` URL then made a duplicate draft
+         * that nothing in the app knew about, because the app only ever saw
+         * the second one's ID.
+         *
+         * An abort is specifically the indeterminate case. A DNS or refused-
+         * connection failure never reached WordPress at all, so the other URL
+         * shape is still worth trying — that fallback is the whole reason two
+         * shapes exist.
+         */
+        if (init.write === true && sent(err)) {
+          throw new WordPressError(
+            "WordPress did not answer in time, and the draft may or may not have been created. Nothing was sent again — check your WordPress drafts, then export once more.",
+            false,
+            "indeterminate",
+          );
+        }
         unreachable += 1;
         break; // Network failure is a property of the URL, not the token.
       }
@@ -436,6 +499,15 @@ export type WpDraftPayload = {
   tags?: string[];
   /** WP Recipe Maker card, built from the author's untouched recipe. */
   recipe?: unknown;
+  /**
+   * The Drafter article this draft is.
+   *
+   * Sent on every write so the site can bind the draft to the article and
+   * recognise a repeat of the same export. Connectors older than 1.6.0 ignore
+   * it, which costs nothing and protects nothing — the app-side guards still
+   * apply, and the author is prompted to update the plugin elsewhere.
+   */
+  articleId?: string;
 };
 
 function draftBody(draft: WpDraftPayload) {
@@ -453,6 +525,7 @@ function draftBody(draft: WpDraftPayload) {
     categories: draft.categories ?? [],
     tags: draft.tags ?? [],
     ...(draft.recipe === undefined ? {} : { recipe: draft.recipe }),
+    article_id: draft.articleId ?? "",
   };
 }
 
@@ -519,15 +592,24 @@ export async function createDraft(
   siteUrl: string,
   token: string,
   draft: WpDraftPayload,
-): Promise<{ id: number; editLink: string; recipe: WpRecipeReport; seo: WpSeoReport | null }> {
+): Promise<{
+  id: number;
+  editLink: string;
+  recipe: WpRecipeReport;
+  seo: WpSeoReport | null;
+  /** True when the site recognised the article and reused its existing draft. */
+  deduped: boolean;
+}> {
   const raw = await call<{
     id?: unknown;
     edit_link?: unknown;
     recipe?: unknown;
     seo?: unknown;
+    deduped?: unknown;
   }>(siteUrl, token, "/draft", {
     method: "POST",
     body: draftBody(draft),
+    write: true,
   });
 
   return {
@@ -535,6 +617,7 @@ export async function createDraft(
     editLink: str(raw.edit_link),
     recipe: recipeReport(raw.recipe),
     seo: seoReport(raw.seo),
+    deduped: raw.deduped === true,
   };
 }
 
@@ -556,6 +639,7 @@ export async function updateDraft(
     method: "POST",
     missing: "route",
     body: draftBody(draft),
+    write: true,
   });
 
   return {

@@ -2,6 +2,7 @@ import {
   Activity,
   FileSearch,
   FileText,
+  Home,
   KeyRound,
   BarChart3,
   Gauge,
@@ -43,6 +44,7 @@ export type NavSection = {
  * a page in its own right rather than a tab inside Keyword Research.
  */
 export const NAV: NavSection[] = [
+  { label: "Dashboard", icon: Home, href: "/dashboard" },
   {
     label: "Keyword Research",
     icon: Search,
@@ -94,6 +96,7 @@ export const OWNER_NAV: NavLeaf[] = [
 
 /** Flat list for the mobile drawer, which has no room for dropdowns. */
 export const FLAT_NAV: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/keywords", label: "Keyword Research", icon: Search },
   { href: "/difficulty", label: "Quick Difficulty", icon: Gauge },
   { href: "/brainstorm", label: "Brainstorm", icon: Sparkles },

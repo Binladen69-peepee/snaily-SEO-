@@ -55,4 +55,10 @@ export type GetNormalizedSerpParams = {
    * deliberately put SerpApi first — nothing in the product does today.
    */
   preferProvider?: "dataforseo" | "serpapi";
+  /**
+   * Optional city/region for localised SERPs. DataForSEO accepts
+   * `location_name` (e.g. "London,England,United Kingdom"). When set, the
+   * SERP reflects local results for that geography.
+   */
+  location?: string;
 };

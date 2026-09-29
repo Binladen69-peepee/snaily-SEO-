@@ -58,6 +58,8 @@ export function KeywordTypeahead({
   className,
   inputClassName,
   autoFocus,
+  /** Hide the built-in search icon (when the parent already provides one). */
+  hideIcon,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -68,6 +70,7 @@ export function KeywordTypeahead({
   className?: string;
   inputClassName?: string;
   autoFocus?: boolean;
+  hideIcon?: boolean;
 }) {
   const listId = useId();
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -193,10 +196,12 @@ export function KeywordTypeahead({
   return (
     <div className={cn("relative", className)}>
       <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
+        {!hideIcon && (
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+        )}
         <input
           type="text"
           role="combobox"
@@ -226,7 +231,8 @@ export function KeywordTypeahead({
           }}
           onKeyDown={onKeyDown}
           className={cn(
-            "h-10 w-full rounded-md border border-input bg-background pl-9 pr-9 text-sm",
+            "h-10 w-full rounded-md border border-input bg-background pr-9 text-sm",
+            hideIcon ? "pl-3" : "pl-9",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             inputClassName,
           )}
@@ -286,6 +292,7 @@ export function KeywordTypeahead({
           )}
         </div>
       )}
+
     </div>
   );
 }

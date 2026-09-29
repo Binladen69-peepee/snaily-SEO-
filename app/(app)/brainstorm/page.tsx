@@ -2,9 +2,11 @@ import { Sparkles } from "lucide-react";
 import { Suspense } from "react";
 
 import { SearchForm } from "@/components/keywords/search-form";
+import { SearchHistoryList } from "@/components/keywords/search-history";
 import { SuggestionColumns } from "@/components/keywords/suggestions";
 import { PageHeader, ToolPrompt } from "@/components/tool-shell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getHistory } from "@/lib/keywords/history";
 import { getKeywordProvider } from "@/lib/keywords/provider";
 import { ProviderError } from "@/lib/keywords/types";
 
@@ -36,6 +38,7 @@ export default async function BrainstormPage({ searchParams }: Props) {
   const raw = await searchParams;
   const q = typeof raw.q === "string" ? raw.q.trim() : "";
   const country = typeof raw.country === "string" ? raw.country : "us";
+  const history = q === "" ? await getHistory() : [];
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5">
@@ -47,10 +50,17 @@ export default async function BrainstormPage({ searchParams }: Props) {
       <SearchForm showMode={false} placeholder="Enter a seed keyword to expand" />
 
       {q === "" ? (
-        <ToolPrompt icon={Sparkles} title="Enter a keyword to brainstorm">
-          You&apos;ll get autocomplete phrases straight from the search engines
-          — real queries people are typing.
-        </ToolPrompt>
+        <>
+          <ToolPrompt icon={Sparkles} title="Enter a keyword to brainstorm">
+            You&apos;ll get autocomplete phrases straight from the search engines
+            — real queries people are typing.
+          </ToolPrompt>
+          {history.length > 0 && (
+            <div className="mx-auto max-w-lg">
+              <SearchHistoryList items={history} />
+            </div>
+          )}
+        </>
       ) : (
         <Suspense
           key={`${q}|${country}`}

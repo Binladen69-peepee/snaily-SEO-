@@ -2,8 +2,9 @@
 
 import { FolderOpen, Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 
+import { KeywordTypeahead } from "@/components/keywords/keyword-typeahead";
 import { ToolbarActions } from "@/components/keywords/toolbar";
 import {
   COUNTRIES,
@@ -11,18 +12,12 @@ import {
   SEARCH_MODES,
 } from "@/lib/keywords/types";
 
-/*
- * On a phone the strip wraps to two rows inside the same bordered box: the
- * keyword on top, then the two selectors and Search. Keeping it on one row
- * pushed ~100px past a 390px viewport and scrolled the whole page sideways.
- */
 const SELECT =
   "h-[38px] min-w-0 flex-1 border-t border-border bg-transparent pl-2.5 pr-6 text-[13px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:border-l sm:border-t-0 sm:pl-3 sm:pr-7";
 
 /**
- * The full-width search strip KeySearch puts directly beneath the navigation:
- * one flush input, a location selector, a match-type selector, the Search
- * button, and the result actions pinned to the right.
+ * The full-width search strip: keyword typeahead with auto-suggest + history,
+ * a location selector, a match-type selector, and the Search button.
  */
 export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) {
   const router = useRouter();
@@ -34,18 +29,22 @@ export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) 
   const [country, setCountry] = useState(params.get("country") ?? "us");
   const [mode, setMode] = useState(params.get("mode") ?? "related");
 
+  const search = useCallback(
+    (raw: string) => {
+      const q = raw.trim();
+      if (q === "") return;
+      const next = new URLSearchParams({ q, country });
+      if (mode !== "related") next.set("mode", mode);
+      startTransition(() => {
+        router.push(`${pathname}?${next.toString()}`);
+      });
+    },
+    [country, mode, pathname, router, startTransition],
+  );
+
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const q = keyword.trim();
-    if (q === "") return;
-
-    // A new search resets filters and pagination.
-    const next = new URLSearchParams({ q, country });
-    if (mode !== "related") next.set("mode", mode);
-
-    startTransition(() => {
-      router.push(`${pathname}?${next.toString()}`);
-    });
+    search(keyword);
   }
 
   return (
@@ -54,21 +53,19 @@ export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) 
         onSubmit={onSubmit}
         className="flex min-w-0 w-full flex-1 flex-wrap items-center rounded border border-border bg-background sm:w-auto"
       >
-        <div className="flex w-full min-w-0 items-center sm:w-auto sm:flex-1">
-          <span className="shrink-0 pl-2.5 pr-1.5 text-muted-foreground">
+        <div className="relative flex w-full min-w-0 items-center sm:w-auto sm:flex-1">
+          <span className="pointer-events-none shrink-0 pl-2.5 pr-1.5 text-muted-foreground">
             <FolderOpen className="size-4" aria-hidden />
           </span>
-
-          <input
+          <KeywordTypeahead
+            className="min-w-0 flex-1"
+            inputClassName="h-[38px] border-0 shadow-none rounded-none bg-transparent pl-1 pr-1 text-[13.5px] focus-visible:ring-0"
             value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-            }}
+            country={country}
             placeholder="Enter a keyword"
-            aria-label="Keyword"
-            maxLength={200}
-            autoComplete="off"
-            className="h-[38px] min-w-0 flex-1 bg-transparent px-1 text-[13.5px] placeholder:text-muted-foreground focus:outline-none"
+            onChange={setKeyword}
+            onSelect={search}
+            hideIcon
           />
         </div>
 
@@ -80,7 +77,7 @@ export function SearchBar({ activeFilterCount }: { activeFilterCount: number }) 
           aria-label="Location"
           className={SELECT}
         >
-          <option value="any">Any Location</option>
+          <option value="any">All Countries</option>
           {COUNTRIES.map((c) => (
             <option key={c.code} value={c.code}>
               {c.label}

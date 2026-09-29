@@ -12,6 +12,8 @@ import {
 } from "@/lib/dataforseo/config";
 import { ensureSettings } from "@/lib/settings";
 import { DataForSeoError, errorFromStatus } from "@/lib/dataforseo/errors";
+import { log } from "@/lib/log";
+import { assertProviderSpend, recordProviderSpend } from "@/lib/spend";
 
 export type DataForSeoTaskResult<T> = {
   statusCode: number;
@@ -54,6 +56,7 @@ export async function dataForSeoPost<T>(
    */
   if (opts.credentials === undefined) await ensureSettings();
   const creds = opts.credentials ?? requireCredentials();
+  await assertProviderSpend("dataforseo");
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = opts.fetchImpl ?? fetch;
   const url = `${dataForSeoBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
@@ -146,11 +149,14 @@ export async function dataForSeoPost<T>(
 
   const resultRaw = task.result;
   const result = Array.isArray(resultRaw) ? (resultRaw as T[]) : [];
+  const cost = Number(task.cost ?? envelope.cost ?? 0) || 0;
+  await recordProviderSpend("dataforseo", cost, 1);
+  log("dfs.call", { path, cost, rows: result.length });
 
   return {
     statusCode: taskCode,
     statusMessage: String(task.status_message ?? "Ok."),
-    cost: Number(task.cost ?? envelope.cost ?? 0) || 0,
+    cost,
     result,
     rawTaskCount: envelope.tasks?.length ?? 1,
   };

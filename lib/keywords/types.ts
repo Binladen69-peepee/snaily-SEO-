@@ -16,15 +16,26 @@ export const INTENTS = [
 export type SearchIntent = (typeof INTENTS)[number];
 
 /** How the idea list is generated. Mirrors the mode selector in the search bar. */
-export const SEARCH_MODES = ["related", "broad", "questions", "exact"] as const;
+export const SEARCH_MODES = [
+  "related",
+  "broad",
+  "exact",
+  "questions",
+  "long-tail",
+  "comparisons",
+  "buyer-intent",
+] as const;
 
 export type SearchMode = (typeof SEARCH_MODES)[number];
 
 export const SEARCH_MODE_LABEL: Record<SearchMode, string> = {
   related: "Related Keywords",
   broad: "Broad Match",
-  questions: "Questions",
   exact: "Exact Match",
+  questions: "Questions",
+  "long-tail": "Long-Tail (4+ words)",
+  comparisons: "Comparisons (vs, or, alternative)",
+  "buyer-intent": "Buyer Intent (best, top, review)",
 };
 
 /** Autocomplete sources merged into the suggestions panel. */
@@ -55,6 +66,8 @@ export type Keyword = {
   intent: SearchIntent;
   /** Total indexed results for the query. */
   results: number;
+  /** live = DataForSEO Keywords Data/Labs; estimated = modelled fallback. */
+  metricsSource?: "live" | "estimated";
 };
 
 export type SerpResult = {
@@ -206,15 +219,86 @@ export class ProviderError extends Error {
   }
 }
 
-/** `any` is the worldwide option — providers omit the country parameter for it. */
+/**
+ * `any` is the worldwide / "All Countries" option — providers default to US
+ * when no country-specific endpoint is available.
+ *
+ * Grouped by region with the most commonly-used markets first.
+ */
 export const COUNTRIES = [
+  // ── North America ──
   { code: "us", label: "United States" },
-  { code: "uk", label: "United Kingdom" },
   { code: "ca", label: "Canada" },
-  { code: "au", label: "Australia" },
+  { code: "mx", label: "Mexico" },
+
+  // ── Europe ──
+  { code: "uk", label: "United Kingdom" },
   { code: "de", label: "Germany" },
   { code: "fr", label: "France" },
   { code: "es", label: "Spain" },
+  { code: "it", label: "Italy" },
+  { code: "nl", label: "Netherlands" },
+  { code: "be", label: "Belgium" },
+  { code: "at", label: "Austria" },
+  { code: "ch", label: "Switzerland" },
+  { code: "se", label: "Sweden" },
+  { code: "no", label: "Norway" },
+  { code: "dk", label: "Denmark" },
+  { code: "fi", label: "Finland" },
+  { code: "ie", label: "Ireland" },
+  { code: "pt", label: "Portugal" },
+  { code: "pl", label: "Poland" },
+  { code: "cz", label: "Czech Republic" },
+  { code: "ro", label: "Romania" },
+  { code: "hu", label: "Hungary" },
+  { code: "gr", label: "Greece" },
+  { code: "bg", label: "Bulgaria" },
+  { code: "hr", label: "Croatia" },
+  { code: "sk", label: "Slovakia" },
+  { code: "ua", label: "Ukraine" },
+  { code: "rs", label: "Serbia" },
+  { code: "ru", label: "Russia" },
+  { code: "tr", label: "Turkey" },
+
+  // ── Asia & Pacific ──
   { code: "in", label: "India" },
+  { code: "au", label: "Australia" },
+  { code: "nz", label: "New Zealand" },
+  { code: "jp", label: "Japan" },
+  { code: "kr", label: "South Korea" },
+  { code: "cn", label: "China" },
+  { code: "hk", label: "Hong Kong" },
+  { code: "tw", label: "Taiwan" },
+  { code: "sg", label: "Singapore" },
+  { code: "my", label: "Malaysia" },
+  { code: "id", label: "Indonesia" },
+  { code: "th", label: "Thailand" },
+  { code: "ph", label: "Philippines" },
+  { code: "vn", label: "Vietnam" },
+  { code: "pk", label: "Pakistan" },
+  { code: "bd", label: "Bangladesh" },
+
+  // ── Middle East ──
+  { code: "ae", label: "United Arab Emirates" },
+  { code: "sa", label: "Saudi Arabia" },
+  { code: "il", label: "Israel" },
+  { code: "eg", label: "Egypt" },
+  { code: "qa", label: "Qatar" },
+  { code: "kw", label: "Kuwait" },
+  { code: "bh", label: "Bahrain" },
+  { code: "om", label: "Oman" },
+
+  // ── South America ──
+  { code: "br", label: "Brazil" },
+  { code: "ar", label: "Argentina" },
+  { code: "co", label: "Colombia" },
+  { code: "cl", label: "Chile" },
+  { code: "pe", label: "Peru" },
+
+  // ── Africa ──
+  { code: "za", label: "South Africa" },
+  { code: "ng", label: "Nigeria" },
+  { code: "ke", label: "Kenya" },
+  { code: "gh", label: "Ghana" },
 ] as const;
 

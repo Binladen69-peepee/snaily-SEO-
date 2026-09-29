@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { difficultyFromSerpComposition } from "@/lib/keywords/authority";
-import { estimateKeyword } from "@/lib/keywords/estimate";
+import { hydrateKeyword, hydrateKeywords, keywordMap } from "@/lib/keywords/hydrate";
 import { getDomainAuthority, scoreDomain } from "@/lib/metrics/authority";
 import { getCachedLinkCounts } from "@/lib/metrics/link-data";
 import { scoreLinkCounts } from "@/lib/metrics/link-counts";
@@ -200,7 +200,7 @@ export class SerpApiProvider implements KeywordProvider {
   readonly name = "serpapi";
   readonly isMock = false;
   /** Live SERPs, estimated volume — the UI uses this to badge the difference. */
-  readonly volumeIsEstimated = true;
+  readonly volumeIsEstimated = false;
 
   constructor(private readonly apiKey: string) {}
 
@@ -359,11 +359,14 @@ export class SerpApiProvider implements KeywordProvider {
     const data = await this.fetchCached("google", keyword, country);
     const serp = await this.withAuthority(this.toSerpResults(data, keyword));
 
-    const base = estimateKeyword(
+    const base = await hydrateKeyword(
       keyword,
       country,
-      data.search_information?.total_results,
+      language,
     );
+    if (data.search_information?.total_results) {
+      base.results = data.search_information.total_results;
+    }
 
     // Difficulty is scored from what the SERP actually shows — who ranks, how
     // optimised their titles are, how many slots are forums. It used to average
@@ -381,17 +384,26 @@ export class SerpApiProvider implements KeywordProvider {
         100;
     }
 
-    const related = (data.related_searches ?? [])
+    const relatedPhrases = (data.related_searches ?? [])
       .map((s) => s.query?.trim())
       .filter((q): q is string => !!q)
-      .slice(0, 12)
-      .map((q) => estimateKeyword(q, country));
+      .slice(0, 12);
 
-    const questions = (data.related_questions ?? [])
+    const questionPhrases = (data.related_questions ?? [])
       .map((s) => s.question?.trim())
       .filter((q): q is string => !!q)
-      .slice(0, 12)
-      .map((q) => estimateKeyword(q, country));
+      .slice(0, 12);
+
+    const extraMap = keywordMap(
+      await hydrateKeywords([...relatedPhrases, ...questionPhrases], country, language),
+    );
+
+    const related = relatedPhrases.map(
+      (q) => extraMap.get(q.toLowerCase()) ?? { ...base, keyword: q },
+    );
+    const questions = questionPhrases.map(
+      (q) => extraMap.get(q.toLowerCase()) ?? { ...base, keyword: q },
+    );
 
     return { ...base, related, questions, serp };
   }
@@ -429,10 +441,22 @@ export class SerpApiProvider implements KeywordProvider {
       );
     } else if (mode === "exact") {
       list = list.filter((p) => p.includes(keyword.trim().toLowerCase()));
+    } else if (mode === "long-tail") {
+      list = list.filter((p) => p.split(/\s+/).length >= 4);
+    } else if (mode === "comparisons") {
+      list = list.filter((p) =>
+        /\b(vs\.?|versus|or|compared|comparison|alternative|differ)/i.test(p),
+      );
+    } else if (mode === "buyer-intent") {
+      list = list.filter((p) =>
+        /\b(best|top|review|cheap|affordable|buy|price|deal|discount|worth|recommend)/i.test(
+          p,
+        ),
+      );
     }
 
-    const all = list
-      .map((p) => estimateKeyword(p, country))
+    const hydrated = await hydrateKeywords(list, country, params.language);
+    const all = hydrated
       .filter((k) => matches(k, filters))
       .sort((a, b) => b.volume - a.volume);
 
@@ -449,11 +473,10 @@ export class SerpApiProvider implements KeywordProvider {
     country: string,
     language: string,
   ): Promise<Keyword[]> {
-    void language;
-    // Deliberately no SERP call per keyword — a 500-row bulk run would wipe out
-    // a month of quota. Bulk metrics stay estimated.
-    return Promise.resolve(
-      keywords.map((k) => estimateKeyword(k.trim().toLowerCase(), country)),
+    return hydrateKeywords(
+      keywords.map((k) => k.trim().toLowerCase()),
+      country,
+      language,
     );
   }
 

@@ -9,6 +9,7 @@ import { checkTechnicalSeo } from "@/lib/seo/technical";
 
 const analyzeSchema = z.object({
   url: z.string().trim().url().max(2000),
+  keyword: z.string().trim().max(200).optional(),
 });
 
 async function ownedProject(userId: string, projectId: string) {
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await analyzeUrl(parsed.data.url);
+    const result = await analyzeUrl(parsed.data.url, parsed.data.keyword);
     return NextResponse.json({ result });
   } catch {
     return NextResponse.json(

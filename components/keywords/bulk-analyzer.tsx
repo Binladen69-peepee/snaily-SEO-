@@ -270,6 +270,7 @@ export function BulkAnalyzer({
             aria-label="Country"
             className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
+            <option value="any">All Countries</option>
             {COUNTRIES.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.label}

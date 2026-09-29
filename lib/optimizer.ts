@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 
 import { countPhrase, weighTerm, type TargetTerm } from "@/lib/content-score";
 import { difficultyFromSerpComposition } from "@/lib/keywords/authority";
-import { estimateKeyword } from "@/lib/keywords/estimate";
+import { hydrateKeyword } from "@/lib/keywords/hydrate";
 import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
 import type { NormalizedSerp } from "@/lib/keywords/serp-normalized";
 import {
@@ -435,11 +435,13 @@ export async function buildBrief(
     serpSnapshot = null;
   }
 
-  const estimated = estimateKeyword(
+  const estimated = await hydrateKeyword(
     keyword,
     country,
-    serpSnapshot?.totalResults ?? undefined,
   );
+  if (serpSnapshot?.totalResults) {
+    estimated.results = serpSnapshot.totalResults;
+  }
 
   if (serpSnapshot && serpSnapshot.organicResults.length > 0) {
     const composition = difficultyFromSerpComposition(

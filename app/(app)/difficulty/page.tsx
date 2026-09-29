@@ -3,10 +3,12 @@ import { Suspense } from "react";
 
 import { ScoreCircle } from "@/components/difficulty";
 import { SearchForm } from "@/components/keywords/search-form";
+import { SearchHistoryList } from "@/components/keywords/search-history";
 import { SerpAnalysis } from "@/components/keywords/serp-analysis";
 import { PageHeader, StatTile, ToolPrompt } from "@/components/tool-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCpc, formatNumber, formatVolume } from "@/lib/keywords/format";
+import { getHistory } from "@/lib/keywords/history";
 import { getKeywordProvider } from "@/lib/keywords/provider";
 import { ProviderError } from "@/lib/keywords/types";
 
@@ -60,6 +62,7 @@ export default async function DifficultyPage({ searchParams }: Props) {
   const raw = await searchParams;
   const q = typeof raw.q === "string" ? raw.q.trim() : "";
   const country = typeof raw.country === "string" ? raw.country : "us";
+  const history = q === "" ? await getHistory() : [];
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5">
@@ -71,10 +74,17 @@ export default async function DifficultyPage({ searchParams }: Props) {
       <SearchForm showMode={false} placeholder="Enter a keyword to score it" />
 
       {q === "" ? (
-        <ToolPrompt icon={Gauge} title="Enter a keyword to check difficulty">
-          You&apos;ll get the difficulty score, headline metrics and the ten
-          pages currently ranking, with the link strength behind each one.
-        </ToolPrompt>
+        <>
+          <ToolPrompt icon={Gauge} title="Enter a keyword to check difficulty">
+            You&apos;ll get the difficulty score, headline metrics and the ten
+            pages currently ranking, with the link strength behind each one.
+          </ToolPrompt>
+          {history.length > 0 && (
+            <div className="mx-auto max-w-lg">
+              <SearchHistoryList items={history} />
+            </div>
+          )}
+        </>
       ) : (
         <Suspense
           key={`${q}|${country}`}

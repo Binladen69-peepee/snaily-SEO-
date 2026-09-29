@@ -4,6 +4,7 @@ import Link from "next/link";
 import { RankTrackerView } from "@/components/tracking/rank-tracker-view";
 import { ToolPrompt } from "@/components/tool-shell";
 import { getSession } from "@/lib/auth";
+import { listOpenAlerts } from "@/lib/alerts";
 import { prisma } from "@/lib/db";
 import { getActiveProject } from "@/lib/projects";
 import { discoverKeywords, domainOf, listTracked } from "@/lib/rank-tracker";
@@ -31,13 +32,14 @@ export default async function TrackingPage() {
     );
   }
 
-  const [keywords, discovered, connection] = await Promise.all([
+  const [keywords, discovered, connection, alerts] = await Promise.all([
     listTracked(project.id, session.userId),
     discoverKeywords(project.id),
     prisma.project.findUnique({
       where: { id: project.id },
       select: { gscSiteUrl: true },
     }),
+    listOpenAlerts(project.id),
   ]);
 
   return (
@@ -48,6 +50,7 @@ export default async function TrackingPage() {
         domain={domainOf(project.url)}
         discovered={discovered}
         searchConsoleReady={connection?.gscSiteUrl != null}
+        alerts={alerts}
       />
     </div>
   );

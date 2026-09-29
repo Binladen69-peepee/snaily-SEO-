@@ -7,6 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { MetricSourceMark } from "@/components/keywords/metric-source";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { downloadCsv, toCsv } from "@/lib/keywords/csv";
@@ -174,6 +175,7 @@ export function ListsView({ lists }: { lists: ListDetail[] }) {
                           </td>
                           <td className="tabular px-3 py-2 text-right">
                             {formatVolume(k.volume)}
+                            <MetricSourceMark source={k.metricsSource} />
                           </td>
                           <td className={`tabular px-3 py-2 text-right ${kd.className}`}>
                             {k.difficulty}

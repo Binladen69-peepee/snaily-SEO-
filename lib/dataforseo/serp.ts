@@ -72,6 +72,8 @@ export type FetchDfsSerpOptions = {
   depth?: number;
   device?: "desktop" | "mobile";
   fetchImpl?: typeof fetch;
+  /** City/region for localised SERPs, e.g. "London,England,United Kingdom". */
+  locationName?: string;
 };
 
 /**
@@ -98,18 +100,22 @@ export async function fetchDataForSeoOrganicSerp(
   const language = dataForSeoLanguageCode(opts.language ?? "en");
   const locationCode = dataForSeoLocationCode(opts.country);
 
+  const payload: Record<string, unknown> = {
+    keyword: opts.keyword,
+    location_code: locationCode,
+    language_code: language,
+    device: opts.device ?? "desktop",
+    depth,
+  };
+  // location_name overrides location_code for city/region-level SERPs.
+  if (opts.locationName) {
+    payload.location_name = opts.locationName;
+    delete payload.location_code;
+  }
+
   const response = await dataForSeoPost<DfsResultBlock>(
     "/v3/serp/google/organic/live/advanced",
-    [
-      {
-        keyword: opts.keyword,
-        location_code: locationCode,
-        language_code: language,
-        device: opts.device ?? "desktop",
-        depth,
-        // Keep cost down — no paid PAA click expansion / AI overview extras.
-      },
-    ],
+    [payload],
     { fetchImpl: opts.fetchImpl, timeoutMs: serpTimeoutMs(depth) },
   );
 

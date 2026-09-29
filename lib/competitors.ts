@@ -1,7 +1,7 @@
 import { crawlSite } from "@/lib/audit/crawler";
 import { prisma } from "@/lib/db";
 import { estimateTraffic } from "@/lib/keywords/ctr";
-import { estimateKeyword } from "@/lib/keywords/estimate";
+import { hydrateKeywords } from "@/lib/keywords/hydrate";
 import { dataForSeoConfigured, getCachedBacklinkSummary } from "@/lib/dataforseo";
 import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
 import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
@@ -323,7 +323,10 @@ export async function profileDomain(
     pagesFailed: pages.length - ok.length,
     medianWords: median(words),
     totalWords: words.reduce((a, b) => a + b, 0),
-    keywords: phrases.map((t) => estimateKeyword(t.term, country)),
+    keywords: await hydrateKeywords(
+      phrases.map((t) => t.term),
+      country,
+    ),
     topics: extractTerms(targeting, 1, 20),
     missingTitles: list.filter((p) => p.title.trim() === "").length,
     missingMeta: list.filter((p) => p.metaDescription.trim() === "").length,
@@ -493,13 +496,16 @@ export async function getSearchConsoleKeywords(
 
   if (rows.length === 0) return null;
 
+  const live = await hydrateKeywords(
+    rows.map((r) => r.query),
+    country,
+  );
+  const byKw = new Map(live.map((k) => [k.keyword, k]));
+
   return rows.map((r) => {
     const clicks = r._sum.clicks ?? 0;
     const impressions = r._sum.impressions ?? 0;
-    // Volume, difficulty and CPC are not in Search Console — estimated.
-    // The country has to be threaded through: hardcoding "us" here meant the
-    // location selector silently did nothing on this screen.
-    const est = estimateKeyword(r.query, country);
+    const est = byKw.get(r.query.trim().toLowerCase()) ?? live[0]!;
     const position =
       r._avg.position === null ? null : Math.round(r._avg.position * 10) / 10;
 
@@ -605,7 +611,10 @@ async function keywordsFromSyncedPosts(
       .sort((a, b) => b.documents - a.documents || b.count - a.count)
       .slice(0, 200);
 
-    return phrases.map((t) => estimateKeyword(t.term, country));
+    return hydrateKeywords(
+      phrases.map((t) => t.term),
+      country,
+    );
   } catch {
     return [];
   }

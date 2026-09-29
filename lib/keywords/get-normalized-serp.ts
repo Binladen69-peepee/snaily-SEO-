@@ -256,6 +256,7 @@ export async function getNormalizedSerp(
         language,
         depth,
         device,
+        locationName: params.location,
       });
       const normalized = toNormalized({
         keyword,

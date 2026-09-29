@@ -26,7 +26,10 @@ export async function GET(req: Request) {
 
   try {
     const suggestions = await provider.suggest(keyword, country);
-    return NextResponse.json({ keyword, suggestions });
+    return NextResponse.json(
+      { keyword, suggestions },
+      { headers: { "Cache-Control": "private, max-age=60" } },
+    );
   } catch (err) {
     const message =
       err instanceof ProviderError

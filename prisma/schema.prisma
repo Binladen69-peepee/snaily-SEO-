@@ -15,6 +15,8 @@ model User {
   passwordHash String
   /// "owner" can manage users; "member" is a VA-style account.
   role         String   @default("member")
+  /// Incremented on password change / logout-all so outstanding JWTs die.
+  sessionVersion Int    @default(1)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -580,6 +582,15 @@ model Article {
   wpDraftId    Int?
   wpEditLink   String @default("")
   wpSyncedAt   DateTime?
+  /// Claimed for the duration of one WordPress export, and cleared after.
+  ///
+  /// The mutex that makes "one export = one draft" true for concurrent
+  /// senders: a double-clicked button, a retried fetch and two open tabs all
+  /// reach this route at once, and creating a draft is not something that can
+  /// be undone by noticing afterwards. A claim older than the route's own
+  /// 60-second ceiling is stale by definition and is taken over rather than
+  /// left to block the author forever.
+  wpExportingAt DateTime?
 
   /// Excerpt, slug, SEO title/description, featured image, categories, tags.
   editorial Json @default("{}")
@@ -976,4 +987,54 @@ model ForesightActual {
 
   @@unique([forecastId, month])
   @@index([forecastId])
+}
+
+/// Sliding-window rate limit shared across serverless isolates.
+model RateLimitBucket {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+
+  @@index([resetAt])
+}
+
+/// Daily provider spend so a runaway Deep Dive cannot empty the DFS wallet.
+model ProviderSpend {
+  id      String @id @default(cuid())
+  provider String
+  /// UTC calendar day YYYY-MM-DD
+  day     String
+  costUsd Float  @default(0)
+  calls   Int    @default(0)
+
+  @@unique([provider, day])
+}
+
+/// Operator-visible failures. No secrets, no request bodies.
+model ErrorEvent {
+  id        String   @id @default(cuid())
+  message   String
+  route     String   @default("")
+  requestId String   @default("")
+  stack     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Rank movement worth a look: a drop, a loss, or a meaningful gain.
+model RankAlert {
+  id           String    @id @default(cuid())
+  projectId    String
+  userId       String
+  keywordId    String
+  keyword      String
+  kind         String
+  previousRank Int?
+  currentRank  Int?
+  createdAt    DateTime  @default(now())
+  readAt       DateTime?
+
+  @@index([projectId, createdAt])
+  @@index([userId, readAt])
 }

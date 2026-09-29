@@ -8,7 +8,7 @@ import {
   Minus,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -93,8 +93,6 @@ type Props = {
   articleId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** True when a draft already exists and this send should update it. */
-  update: boolean;
   /** Handles the reasons that need the setup gate rather than a message here. */
   onGate: (reason: string) => void;
   onExported: (result: ExportOutcome) => void;
@@ -136,7 +134,6 @@ export function WordPressExportDialog({
   articleId,
   open,
   onOpenChange,
-  update,
   onGate,
   onExported,
 }: Props) {
@@ -145,14 +142,26 @@ export function WordPressExportDialog({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * The send latch.
+   *
+   * `sending` disables the button, but only once React has rendered the state
+   * change — two clicks inside one frame both pass it and both POST. A ref is
+   * set synchronously on the click that gets there first, which is what makes
+   * the second one a no-op rather than a second draft. The server refuses a
+   * concurrent export as well; this is the cheap half of that pair, and it is
+   * the half that keeps the author from seeing an error for their own
+   * double-click.
+   */
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/articles/${articleId}/export?update=${update ? "1" : "0"}`,
-      );
+      // No `update` hint: the preview has to describe what the server will
+      // actually do, and the server reads that off the article row.
+      const res = await fetch(`/api/articles/${articleId}/export`);
       const data = (await res.json()) as ExportPreview & ExportError;
 
       if (!res.ok) {
@@ -176,21 +185,24 @@ export function WordPressExportDialog({
     } finally {
       setLoading(false);
     }
-  }, [articleId, update, onGate, onOpenChange]);
+  }, [articleId, onGate, onOpenChange]);
 
   useEffect(() => {
     if (!open) return;
     setResult(null);
+    inFlight.current = false;
     void load();
   }, [open, load]);
 
   async function send() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSending(true);
     try {
       const res = await fetch(`/api/articles/${articleId}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dest: "wordpress", update }),
+        body: JSON.stringify({ dest: "wordpress" }),
       });
       const data = (await res.json()) as ExportOutcome & ExportError;
 
@@ -205,10 +217,20 @@ export function WordPressExportDialog({
           onGate(data.reason ?? "not_configured");
           return;
         }
+        /*
+         * An export whose outcome is unknown is not a failure, and must not be
+         * offered a retry as though it were. The draft may be on the site; the
+         * author is told to look before sending again, and exporting again
+         * lands in that same draft rather than beside it.
+         */
+        const fallback =
+          data.reason === "indeterminate"
+            ? "WordPress did not answer in time. Check your drafts before exporting again."
+            : "Could not create the WordPress draft.";
         // A failed export never reports success, and never leaves the dialog
         // looking as though something was created.
-        toast.error(data.error ?? "Could not create the WordPress draft.");
-        setError(data.error ?? "Could not create the WordPress draft.");
+        toast.error(data.error ?? fallback);
+        setError(data.error ?? fallback);
         return;
       }
 
@@ -244,6 +266,7 @@ export function WordPressExportDialog({
       toast.error("Could not reach the server.");
     } finally {
       setSending(false);
+      inFlight.current = false;
     }
   }
 

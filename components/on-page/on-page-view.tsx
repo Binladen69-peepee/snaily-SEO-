@@ -93,6 +93,7 @@ export function OnPageView({
 }) {
   const [tab, setTab] = useState<Tab>("analyze");
   const [url, setUrl] = useState(projectUrl ?? "");
+  const [keyword, setKeyword] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OnPageResult | null>(null);
   const [technical, setTechnical] = useState<TechnicalSeoResult | null>(null);
@@ -121,7 +122,10 @@ export function OnPageView({
       const res = await fetch("/api/on-page", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({
+          url: url.trim(),
+          ...(keyword.trim() !== "" && { keyword: keyword.trim() }),
+        }),
       });
       const data = (await res.json()) as { result?: OnPageResult; error?: string };
       if (!res.ok || !data.result) {
@@ -207,6 +211,21 @@ export function OnPageView({
                   className="min-w-0"
                 />
               </div>
+              <div className="min-w-0 sm:w-56 space-y-1.5">
+                <Label htmlFor="on-page-kw">Target Keyword <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  id="on-page-kw"
+                  value={keyword}
+                  onChange={(e) => {
+                    setKeyword(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void analyze();
+                  }}
+                  placeholder="e.g. best coffee maker"
+                  className="min-w-0"
+                />
+              </div>
               <Button
                 className="w-full shrink-0 sm:w-auto"
                 onClick={() => void analyze()}
@@ -235,8 +254,10 @@ export function OnPageView({
                     key={c.id}
                     className="flex min-w-0 items-start gap-2 rounded-lg border border-border bg-card p-3"
                   >
-                    {c.pass ? (
+                    {c.status === "pass" ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+                    ) : c.status === "warning" ? (
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
                     ) : (
                       <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
                     )}

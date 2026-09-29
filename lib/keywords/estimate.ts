@@ -115,6 +115,7 @@ export function estimateKeyword(
     competition,
     trend,
     intent,
+    metricsSource: "estimated",
     // Prefer the real figure from the SERP when the provider supplied one.
     results: totalResults ?? randInt(`${seed}|r`, 120_000, 89_000_000),
   };

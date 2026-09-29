@@ -268,6 +268,7 @@ export default async function CompetitorGapPage({ searchParams }: Props) {
                 aria-label="Country"
                 className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:w-40 lg:flex-none"
               >
+                <option value="any">All Countries</option>
                 {COUNTRIES.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.label}

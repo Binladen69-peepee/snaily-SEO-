@@ -14,7 +14,7 @@ import {
   enrichSerpWithAuthority,
   normalizedToSerpResults,
 } from "@/lib/keywords/enrich-serp";
-import { estimateKeyword } from "@/lib/keywords/estimate";
+import { hydrateKeyword, hydrateKeywords, keywordMap } from "@/lib/keywords/hydrate";
 import { getNormalizedSerp } from "@/lib/keywords/get-normalized-serp";
 import { serpApiConfigured } from "@/lib/keywords/serp-api-guard";
 import { prisma } from "@/lib/db";
@@ -42,7 +42,7 @@ export class LiveKeywordProvider implements KeywordProvider {
           ? "serpapi"
           : "serp";
   readonly isMock = false;
-  readonly volumeIsEstimated = true;
+  readonly volumeIsEstimated = false;
 
   async detail(
     keyword: string,
@@ -61,7 +61,8 @@ export class LiveKeywordProvider implements KeywordProvider {
       normalizedToSerpResults(keyword, serp.organicResults),
     );
 
-    const base = estimateKeyword(keyword, country, serp.totalResults ?? undefined);
+    const base = await hydrateKeyword(keyword, country, language);
+    base.results = serp.totalResults ?? base.results;
 
     const composition = difficultyFromSerpComposition(
       rows.map((r) => ({ domain: r.domain, title: r.title, url: r.url })),
@@ -77,14 +78,17 @@ export class LiveKeywordProvider implements KeywordProvider {
         ) / 100;
     }
 
-    const related = serp.relatedSearches
-      .slice(0, 12)
-      .map((q) => estimateKeyword(q, country));
-    const questions = serp.paa
-      .slice(0, 12)
-      .map((q) => estimateKeyword(q, country));
+    const related = serp.relatedSearches.slice(0, 12);
+    const questions = serp.paa.slice(0, 12);
+    const extras = await hydrateKeywords([...related, ...questions], country, language);
+    const extraMap = keywordMap(extras);
 
-    return { ...base, related, questions, serp: rows };
+    return {
+      ...base,
+      related: related.map((q) => extraMap.get(q.toLowerCase()) ?? { ...base, keyword: q }),
+      questions: questions.map((q) => extraMap.get(q.toLowerCase()) ?? { ...base, keyword: q }),
+      serp: rows,
+    };
   }
 
   async search(params: SearchParams): Promise<SearchResult> {
@@ -117,10 +121,22 @@ export class LiveKeywordProvider implements KeywordProvider {
       );
     } else if (mode === "exact") {
       list = list.filter((p) => p.includes(keyword.trim().toLowerCase()));
+    } else if (mode === "long-tail") {
+      list = list.filter((p) => p.split(/\s+/).length >= 4);
+    } else if (mode === "comparisons") {
+      list = list.filter((p) =>
+        /\b(vs\.?|versus|or|compared|comparison|alternative|differ)/i.test(p),
+      );
+    } else if (mode === "buyer-intent") {
+      list = list.filter((p) =>
+        /\b(best|top|review|cheap|affordable|buy|price|deal|discount|worth|recommend)/i.test(
+          p,
+        ),
+      );
     }
 
-    const all = list
-      .map((p) => estimateKeyword(p, country))
+    const hydrated = await hydrateKeywords(list, country, language);
+    const all = hydrated
       .filter((k) => matches(k, filters))
       .sort((a, b) => b.volume - a.volume);
 
@@ -137,10 +153,10 @@ export class LiveKeywordProvider implements KeywordProvider {
     country: string,
     language: string,
   ): Promise<Keyword[]> {
-    void language;
-    // No per-keyword SERP — bulk would burn provider budget.
-    return Promise.resolve(
-      keywords.map((k) => estimateKeyword(k.trim().toLowerCase(), country)),
+    return hydrateKeywords(
+      keywords.map((k) => k.trim().toLowerCase()),
+      country,
+      language,
     );
   }
 

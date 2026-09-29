@@ -12,6 +12,7 @@ import { originOf } from "@/lib/google/oauth";
 import { toEditorHtml } from "@/lib/markdown";
 import {
   isConnectivityFailure,
+  isIndeterminate,
   WordPressError,
 } from "@/lib/wordpress/client";
 import {
@@ -33,9 +34,77 @@ export const maxDuration = 60;
 const schema = z.object({
   dest: z.enum(["drive", "wordpress"]),
   folderId: z.string().max(200).optional(),
-  /** When true and a draft already exists, update that draft instead of creating another. */
+  /**
+   * Accepted and ignored.
+   *
+   * The browser used to decide here whether an export updated the existing
+   * draft or made a new one, from React state seeded at page load. It is the
+   * article row that knows, so the server reads it there now. The field stays
+   * in the schema only so a browser still running the old bundle gets its
+   * export rather than a 400.
+   */
   update: z.boolean().optional(),
 });
+
+/**
+ * How long a claim on an article's export is honoured.
+ *
+ * Just past this route's own `maxDuration`: once the invocation holding a
+ * claim can no longer be running, the claim is stale and the next export takes
+ * it over. Shorter and a slow export could be duplicated by the retry it was
+ * meant to block; longer and a killed invocation would lock the author out.
+ */
+const EXPORT_CLAIM_MS = 75_000;
+
+/**
+ * Claims the right to export this article, or reports who has it.
+ *
+ * The one thing a duplicate-draft bug needs is two exports of one article in
+ * flight at once — a double-clicked button, a browser that retried the POST,
+ * two open tabs. None of them can be undone by noticing afterwards, so they are
+ * refused at the door instead. A conditional update is the whole mechanism: the
+ * database decides which caller wins, and exactly one row is changed.
+ */
+async function claimExport(articleId: string): Promise<boolean> {
+  const stale = new Date(Date.now() - EXPORT_CLAIM_MS);
+  try {
+    const claimed = await prisma.article.updateMany({
+      where: {
+        id: articleId,
+        OR: [{ wpExportingAt: null }, { wpExportingAt: { lt: stale } }],
+      },
+      data: { wpExportingAt: new Date() },
+    });
+    return claimed.count === 1;
+  } catch (err) {
+    /*
+     * The column is added by a schema push, and a deploy can land before one.
+     *
+     * In that window the claim cannot be taken, and refusing every export
+     * would be a worse bug than the one this guards against — especially as
+     * the three other layers still hold: the planner targets the draft the
+     * article already has, the connector recognises a repeat of an export it
+     * has carried out, and a timed-out write is never re-sent. So the export
+     * proceeds, loudly, and the mutex starts working the moment the column
+     * exists.
+     */
+    console.error("[wordpress export] could not claim the article", err);
+    return true;
+  }
+}
+
+async function releaseExport(articleId: string): Promise<void> {
+  // Never allowed to fail the export it is cleaning up after: the draft is
+  // already on the site, and a stale claim expires by itself.
+  try {
+    await prisma.article.update({
+      where: { id: articleId },
+      data: { wpExportingAt: null },
+    });
+  } catch {
+    /* Expires on its own. */
+  }
+}
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -166,6 +235,21 @@ async function wordpressError(projectId: string, err: unknown) {
     );
   }
 
+  /*
+   * A write that got no answer is its own outcome, not a failed export.
+   *
+   * It must not be reported as "could not create a draft", because it may well
+   * have created one, and an author told it failed clicks Export again. The
+   * article keeps no draft ID from this, so the next export reconciles through
+   * the connector's own article binding rather than stacking a second post.
+   */
+  if (isIndeterminate(err)) {
+    return NextResponse.json(
+      { reason: "indeterminate", error: (err as WordPressError).message },
+      { status: 504 },
+    );
+  }
+
   const lost = isConnectivityFailure(err);
   if (lost) await recordConnectionError(projectId, err);
 
@@ -226,10 +310,14 @@ export async function GET(req: Request, { params }: Params) {
     );
   }
 
-  const update = new URL(req.url).searchParams.get("update") === "1";
-
   try {
-    const plan = await buildExport(article, { update });
+    /*
+     * No options: the preview has to be the export. It was previously steered
+     * by an `update=1` query parameter the browser set from its own state,
+     * which meant the checklist an author confirmed could describe a different
+     * write from the one that followed.
+     */
+    const plan = await buildExport(article);
     return NextResponse.json(planSummary(plan));
   } catch (err) {
     return wordpressError(article.projectId, err);
@@ -277,8 +365,29 @@ export async function POST(req: Request, { params }: Params) {
       );
     }
 
+    if (!(await claimExport(article.id))) {
+      /*
+       * Another export of this article is already on its way to WordPress.
+       * Refusing is the only safe answer: there is no way to join the one in
+       * flight, and going ahead anyway is precisely how two drafts appear.
+       */
+      return NextResponse.json(
+        {
+          reason: "export_in_progress",
+          error:
+            "This article is already being exported. Give it a moment, then check your WordPress drafts.",
+        },
+        { status: 409 },
+      );
+    }
+
     try {
-      const plan = await buildExport(article, { update: parsed.data.update });
+      /*
+       * No caller-supplied target. `buildExport` reads the article's own
+       * `wpDraftId`, so an article that has been exported before goes back into
+       * the draft it already has, whatever the browser believes.
+       */
+      const plan = await buildExport(article);
       const result = await sendExport(gate.creds, plan);
 
       if (result.id <= 0) {
@@ -298,11 +407,14 @@ export async function POST(req: Request, { params }: Params) {
         id: result.id,
         url: result.editLink,
         updated: result.updated,
+        deduped: result.deduped,
         record,
         ...planSummary(plan),
       });
     } catch (err) {
       return wordpressError(article.projectId, err);
+    } finally {
+      await releaseExport(article.id);
     }
   }
 

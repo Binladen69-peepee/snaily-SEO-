@@ -30,6 +30,7 @@ export {
   getCachedDataForSeoRanks,
   recentDataForSeoUsage,
 } from "@/lib/dataforseo/cache";
+export { fetchKeywordMetricsMany, type LiveKeywordMetrics } from "@/lib/dataforseo/keywords";
 
 import { checkDataForSeoHealth } from "@/lib/dataforseo/health";
 import {
